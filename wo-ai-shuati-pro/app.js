@@ -207,7 +207,7 @@ async function handleViewChange(event) {
 function handleViewInput(event) {
   if (event.target.matches("#bankSearch")) {
     state.bankFilter = event.target.value.trim();
-    renderBanks();
+    renderBankList();
   }
   if (event.target.matches("#discoverSearch")) {
     state.discoverQuery = event.target.value.trim();
@@ -270,7 +270,7 @@ function renderBanks() {
         <button class="button" type="submit">导入为新题库</button>
       </form>
 
-      <section class="panel">
+      <section class="panel bank-library-panel">
         <div class="bank-head">
           <div>
             <h2>我的题库</h2>
@@ -281,12 +281,22 @@ function renderBanks() {
           <label for="bankSearch">搜索题库/标签</label>
           <input id="bankSearch" type="search" value="${escapeAttr(state.bankFilter)}" placeholder="输入课程、章节或标签" />
         </div>
-        <div class="bank-list">
-          ${banks.length ? banks.map(renderBankCard).join("") : renderEmpty("还没有题库", "先导入一个 Excel 题库，就能开始刷题。")}
-        </div>
+        <div class="bank-list" data-bank-list>${renderBankListContent(banks)}</div>
       </section>
     </section>
   `;
+}
+
+function renderBankList() {
+  const list = view.querySelector("[data-bank-list]");
+  if (!list) return;
+  list.innerHTML = renderBankListContent(getFilteredBanks());
+}
+
+function renderBankListContent(banks) {
+  return banks.length
+    ? banks.map(renderBankCard).join("")
+    : renderEmpty("还没有题库", "先导入一个 Excel 题库，就能开始刷题。");
 }
 
 function renderBankCard(bank) {
@@ -326,14 +336,14 @@ function renderDiscover() {
     ? "搜索用户名、课程、章节、标签或题库 ID。公开题库可以直接保存到本地刷。"
     : "还没有配置 Supabase，发现页会在配置后启用。";
   view.innerHTML = `
-    <section class="panel">
+    <section class="panel discover-panel">
       <h2>发现题库</h2>
       <p class="subtle">${configNote}</p>
       <div class="field">
         <label for="discoverSearch">用户名 / 题库 ID / 课程标签</label>
         <input id="discoverSearch" type="search" value="${escapeAttr(state.discoverQuery)}" placeholder="maogai、bank_xxx、毛概" />
       </div>
-      <div class="actions">
+      <div class="actions discover-actions">
         <button class="button" type="button" data-action="search-public" ${state.cloudConfigured ? "" : "disabled"}>搜索公开题库</button>
       </div>
     </section>
@@ -1128,7 +1138,6 @@ async function submitAnswer() {
   await refreshBanks();
   persistPracticeSession();
   if (!correct) vibrateWrongFeedback();
-  showToast("已提交");
   render();
 }
 

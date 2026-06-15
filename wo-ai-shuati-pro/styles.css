@@ -348,6 +348,12 @@ h3 {
   padding: 12px;
 }
 
+.bank-library-panel,
+.discover-panel {
+  display: grid;
+  gap: 10px;
+}
+
 .bank-head {
   display: flex;
   align-items: flex-start;
@@ -363,9 +369,18 @@ h3 {
 
 .bank-meta,
 .subtle {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.discover-panel .field {
+  margin-top: 2px;
+}
+
+.discover-actions {
+  margin-top: -2px;
 }
 
 .tag-row,
