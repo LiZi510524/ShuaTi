@@ -476,6 +476,10 @@ h3 {
   border-top: 1px solid rgba(15, 23, 42, 0.1);
 }
 
+.result-actions {
+  margin-top: 10px;
+}
+
 .list-item {
   display: grid;
   gap: 8px;

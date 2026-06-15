@@ -166,6 +166,9 @@ async function handleViewClick(event) {
   if (action === "toggle-favorite") {
     await toggleFavorite(target.dataset.questionId);
   }
+  if (action === "add-wrong") {
+    await addToWrongBook(target.dataset.questionId);
+  }
   if (action === "practice-wrong") {
     state.view = "practice";
     state.practiceMode = "wrong";
@@ -214,14 +217,6 @@ async function handleViewSubmit(event) {
 }
 
 async function handleViewChange(event) {
-  if (event.target.matches("#xlsxFile")) {
-    const file = event.target.files?.[0];
-    const nameInput = document.querySelector("#bankName");
-    if (file && nameInput && !nameInput.value.trim()) {
-      nameInput.value = file.name.replace(/\.[^.]+$/, "");
-    }
-  }
-
   if (event.target.matches("#restoreFile")) {
     const file = event.target.files?.[0];
     if (file) await importBackup(file);
@@ -273,29 +268,23 @@ function renderBanks() {
     <section class="desktop-columns">
       <form id="importForm" class="panel form-grid" autocomplete="off">
         <h2>导入题库</h2>
+        <div class="form-grid two">
+          <div class="field">
+            <label for="courseName">课程</label>
+            <input id="courseName" name="course" type="text" placeholder="毛概" required />
+          </div>
+          <div class="field">
+            <label for="chapterName">章节/范围</label>
+            <input id="chapterName" name="chapter" type="text" placeholder="导论 / 第一章" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="bankTags">标签</label>
+          <input id="bankTags" name="tags" type="text" placeholder="期末, 重点, 老师题库" />
+        </div>
         <div class="field">
           <label for="xlsxFile">Excel 文件</label>
           <input id="xlsxFile" name="file" type="file" accept=".xlsx" required />
-        </div>
-        <div class="form-grid two">
-          <div class="field">
-            <label for="bankName">题库名称</label>
-            <input id="bankName" name="name" type="text" placeholder="例如：毛概导论习题库" required />
-          </div>
-          <div class="field">
-            <label for="courseName">课程</label>
-            <input id="courseName" name="course" type="text" placeholder="例如：毛概" />
-          </div>
-        </div>
-        <div class="form-grid two">
-          <div class="field">
-            <label for="chapterName">章节/范围</label>
-            <input id="chapterName" name="chapter" type="text" placeholder="例如：导论 / 第一章" />
-          </div>
-          <div class="field">
-            <label for="bankTags">标签</label>
-            <input id="bankTags" name="tags" type="text" placeholder="期末, 重点, 老师题库" />
-          </div>
         </div>
         <button class="button" type="submit">导入为新题库</button>
         <p class="subtle">格式：A题干，B正确答案，C解析，D-J选项A-G。单字母为单选，多字母为多选，正确/错误为判断。</p>
@@ -323,13 +312,15 @@ function renderBanks() {
 function renderBankCard(bank) {
   const progress = getBankProgress(bank.id);
   const accuracy = progress.done ? Math.round((progress.correct / progress.done) * 100) : 0;
-  const tags = [bank.course, bank.chapter, ...bank.tags].filter(Boolean);
+  const tags = [...(bank.tags || [])].filter(Boolean);
+  const title = getBankTitle(bank);
+  const chapter = cleanText(bank.chapter);
   return `
     <article class="bank-card">
       <div class="bank-head">
         <div>
-          <h3 class="bank-title">${escapeHtml(bank.name)}</h3>
-          <p class="bank-meta">${bank.questionCount} 题 · 单选 ${bank.counts.single || 0} · 多选 ${bank.counts.multiple || 0} · 判断 ${bank.counts.judge || 0}</p>
+          <h3 class="bank-title">${escapeHtml(title)}</h3>
+          <p class="bank-meta">${chapter ? `${escapeHtml(chapter)} · ` : ""}${bank.questionCount} 题 · 单选 ${bank.counts.single || 0} · 多选 ${bank.counts.multiple || 0} · 判断 ${bank.counts.judge || 0}</p>
         </div>
         ${bank.id === state.currentBankId ? `<span class="type-pill good">当前</span>` : ""}
       </div>
@@ -360,7 +351,7 @@ function renderDiscover() {
       <p class="subtle">${configNote}</p>
       <div class="field">
         <label for="discoverSearch">用户名 / 题库 ID / 课程标签</label>
-        <input id="discoverSearch" type="search" value="${escapeAttr(state.discoverQuery)}" placeholder="例如：maogai、bank_xxx、毛概" />
+        <input id="discoverSearch" type="search" value="${escapeAttr(state.discoverQuery)}" placeholder="maogai、bank_xxx、毛概" />
       </div>
       <div class="actions">
         <button class="button" type="button" data-action="search-public" ${state.cloudConfigured ? "" : "disabled"}>搜索公开题库</button>
@@ -394,7 +385,7 @@ function renderPublicBankCard(bank) {
     <article class="bank-card">
       <div class="bank-head">
         <div>
-          <h3 class="bank-title">${escapeHtml(bank.name)}</h3>
+          <h3 class="bank-title">${escapeHtml(getBankTitle(bank))}</h3>
           <p class="bank-meta">${bank.question_count || 0} 题 · 作者 @${escapeHtml(bank.owner_username || "unknown")} · ID ${escapeHtml(bank.id)}</p>
         </div>
         <span class="type-pill good">公开</span>
@@ -421,7 +412,7 @@ function renderAccount() {
     ${bank ? `
       <section class="panel">
         <h2>当前题库统计</h2>
-        <p class="subtle">${escapeHtml(bank.name)}</p>
+        <p class="subtle">${escapeHtml(getBankTitle(bank))}</p>
         <div class="metric-row">
           <div class="metric"><strong>${summary.done}</strong><span>已做</span></div>
           <div class="metric"><strong>${summary.accuracy}%</strong><span>正确率</span></div>
@@ -479,12 +470,12 @@ function renderProfileForm() {
         </div>
         <div class="field">
           <label for="profileDisplay">昵称</label>
-          <input id="profileDisplay" type="text" value="${escapeAttr(profile.display_name || "")}" placeholder="例如：小李爱刷题" />
+          <input id="profileDisplay" type="text" value="${escapeAttr(profile.display_name || "")}" placeholder="小李爱刷题" />
         </div>
       </div>
       <div class="field">
         <label for="profileBio">简介</label>
-        <input id="profileBio" type="text" value="${escapeAttr(profile.bio || "")}" placeholder="例如：毛概/马原题库整理中" />
+        <input id="profileBio" type="text" value="${escapeAttr(profile.bio || "")}" placeholder="毛概/马原题库整理中" />
       </div>
       <div class="actions">
         <button class="button" type="button" data-action="save-profile">保存主页资料</button>
@@ -517,7 +508,7 @@ function renderPractice() {
     <section class="panel">
       <div class="bank-head">
         <div>
-          <h2>${escapeHtml(bank.name)}</h2>
+          <h2>${escapeHtml(getBankTitle(bank))}</h2>
           <p class="subtle">已做 ${summary.done}/${state.questions.length} · 正确率 ${summary.accuracy}% · 错题 ${summary.wrong}</p>
         </div>
         <span class="type-pill">${escapeHtml(modeName(state.practiceMode))}</span>
@@ -611,11 +602,20 @@ function renderFillInput() {
 
 function renderResult(question, result) {
   const answerText = getAnswerDisplay(question);
+  const progress = getProgress(question.id);
+  const wrongAction = result.correct
+    ? ""
+    : `<div class="actions result-actions">${
+        progress.wrongCount > 0
+          ? `<button class="ghost-button" type="button" disabled>已在错题本</button>`
+          : `<button class="ghost-button" type="button" data-action="add-wrong" data-question-id="${question.id}">加入错题本</button>`
+      }</div>`;
   return `
     <section class="result-box ${result.correct ? "good" : "bad"}">
       <strong>${result.correct ? "答对了" : "答错了"}</strong>
       <div>正确答案：${escapeHtml(answerText)}</div>
       <div class="explanation">${escapeHtml(question.analysis || "暂无解析。")}</div>
+      ${wrongAction}
     </section>
   `;
 }
@@ -630,13 +630,13 @@ function renderWrong() {
   view.innerHTML = `
     <section class="panel">
       <h2>错题本</h2>
-      <p class="subtle">${escapeHtml(bank.name)} · ${wrongQuestions.length} 道错题</p>
+      <p class="subtle">${escapeHtml(getBankTitle(bank))} · ${wrongQuestions.length} 道错题</p>
       <div class="actions">
         <button class="button" type="button" data-action="practice-wrong">重练错题</button>
       </div>
     </section>
     <section class="question-list">
-      ${wrongQuestions.length ? wrongQuestions.map(renderWrongItem).join("") : renderEmpty("暂时没有错题", "做错的题会自动出现在这里。")}
+      ${wrongQuestions.length ? wrongQuestions.map(renderWrongItem).join("") : renderEmpty("暂时没有错题", "手动加入错题本的题会出现在这里。")}
     </section>
   `;
 }
@@ -677,7 +677,7 @@ function renderStats() {
   view.innerHTML = `
     <section class="panel">
       <h2>统计</h2>
-      <p class="subtle">${escapeHtml(bank.name)}</p>
+      <p class="subtle">${escapeHtml(getBankTitle(bank))}</p>
       <div class="metric-row">
         <div class="metric"><strong>${summary.done}</strong><span>已做</span></div>
         <div class="metric"><strong>${summary.accuracy}%</strong><span>正确率</span></div>
@@ -730,13 +730,15 @@ function renderSettingsContent() {
 
 async function importQuestionBank(formData) {
   const file = formData.get("file");
-  const name = cleanText(formData.get("name"));
+  const course = cleanText(formData.get("course"));
+  const chapter = cleanText(formData.get("chapter"));
+  const tags = splitTags(formData.get("tags"));
   if (!file || !file.name) {
     showToast("请选择 Excel 文件");
     return;
   }
-  if (!name) {
-    showToast("请输入题库名称");
+  if (!course) {
+    showToast("请先填写课程");
     return;
   }
 
@@ -750,10 +752,10 @@ async function importQuestionBank(formData) {
     const now = new Date().toISOString();
     const bank = {
       id: bankId,
-      name,
-      course: cleanText(formData.get("course")),
-      chapter: cleanText(formData.get("chapter")),
-      tags: splitTags(formData.get("tags")),
+      name: buildBankName(course, chapter, file.name),
+      course,
+      chapter,
+      tags,
       questionCount: questions.length,
       counts: countQuestionTypes(questions),
       createdAt: now,
@@ -792,7 +794,7 @@ async function publishLocalBank(bankId) {
     if (!bank) throw new Error("找不到题库");
     const questions = await getByIndex(STORE_QUESTIONS, "bankId", bankId);
     if (!questions.length) throw new Error("题库里没有题目");
-    if (!confirm(`确定公开发布“${bank.name}”吗？别人可以搜索并保存这个题库。`)) return;
+    if (!confirm(`确定公开发布“${getBankTitle(bank)}”吗？别人可以搜索并保存这个题库。`)) return;
     showToast("正在发布题库...");
     const cloudId = await cloud.publishBank(bank, questions.sort((a, b) => a.order - b.order), state.cloudProfile, "public");
     const updated = {
@@ -910,13 +912,15 @@ async function usePublicBank(bankId) {
       options: question.options || [],
       createdAt: now,
     }));
+    const localCourse = cleanText(payload.bank.course || payload.bank.name || "公开题库");
+    const localChapter = cleanText(payload.bank.chapter || "");
     const localBank = {
       id: localBankId,
       cloudId: payload.bank.id,
       sourceOwnerUsername: payload.bank.owner_username,
-      name: payload.bank.name,
-      course: payload.bank.course || "",
-      chapter: payload.bank.chapter || "",
+      name: buildBankName(localCourse, localChapter, payload.bank.name),
+      course: localCourse,
+      chapter: localChapter,
       tags: payload.bank.tags || [],
       questionCount: localQuestions.length,
       counts: payload.bank.counts || countQuestionTypes(localQuestions),
@@ -1094,7 +1098,7 @@ async function submitAnswer() {
     answered: true,
     correct,
     attempts: previous.attempts + 1,
-    wrongCount: correct ? previous.wrongCount : previous.wrongCount + 1,
+    wrongCount: previous.wrongCount || 0,
     lastAnsweredAt: new Date().toISOString(),
   };
   state.progress.set(question.id, next);
@@ -1104,7 +1108,8 @@ async function submitAnswer() {
   await updateBankLastStudied(question.bankId);
   await refreshBanks();
   persistPracticeSession();
-  showToast(correct ? "答对了" : "记到错题本了");
+  if (!correct) vibrateWrongFeedback();
+  showToast(correct ? "答对了" : "答错了");
   render();
 }
 
@@ -1204,6 +1209,24 @@ async function toggleFavorite(questionId) {
   render();
 }
 
+async function addToWrongBook(questionId) {
+  const current = getProgress(questionId);
+  const question = state.questions.find((item) => item.id === questionId);
+  const next = {
+    ...current,
+    id: questionId,
+    questionId,
+    bankId: question?.bankId || state.currentBankId,
+    wrongCount: Math.max(1, current.wrongCount || 0),
+    mastered: false,
+  };
+  state.progress.set(questionId, next);
+  await putRecord(STORE_PROGRESS, next);
+  await refreshBanks();
+  showToast("已加入错题本");
+  render();
+}
+
 async function markMastered(questionId) {
   const current = getProgress(questionId);
   const next = { ...current, wrongCount: 0, mastered: true };
@@ -1229,16 +1252,16 @@ function setCurrentBank(id, persist) {
 async function editBank(id) {
   const bank = state.banks.find((item) => item.id === id);
   if (!bank) return;
-  const name = prompt("题库名称", bank.name);
-  if (name === null) return;
-  const course = prompt("课程", bank.course || "") ?? bank.course;
+  const course = prompt("课程", bank.course || getBankTitle(bank)) ?? bank.course;
   const chapter = prompt("章节/范围", bank.chapter || "") ?? bank.chapter;
-  const tagsText = prompt("标签，用逗号分隔", bank.tags.join(", ")) ?? bank.tags.join(", ");
+  const tagsText = prompt("标签，用逗号分隔", (bank.tags || []).join(", ")) ?? (bank.tags || []).join(", ");
+  const cleanCourse = cleanText(course);
+  const cleanChapter = cleanText(chapter);
   const updated = {
     ...bank,
-    name: cleanText(name) || bank.name,
-    course: cleanText(course),
-    chapter: cleanText(chapter),
+    name: buildBankName(cleanCourse, cleanChapter, bank.name),
+    course: cleanCourse,
+    chapter: cleanChapter,
     tags: splitTags(tagsText),
     updatedAt: new Date().toISOString(),
   };
@@ -1250,7 +1273,7 @@ async function editBank(id) {
 async function deleteBank(id) {
   const bank = state.banks.find((item) => item.id === id);
   if (!bank) return;
-  if (!confirm(`确定删除题库“${bank.name}”吗？相关练习记录也会删除。`)) return;
+  if (!confirm(`确定删除“${getBankTitle(bank)}”吗？相关练习记录也会删除。`)) return;
   await deleteBankCascade(id);
   clearPracticeSession(id);
   if (state.currentBankId === id) {
@@ -1605,9 +1628,25 @@ function getFilteredBanks() {
   const keyword = state.bankFilter.toLowerCase();
   if (!keyword) return state.banks;
   return state.banks.filter((bank) => {
-    const text = [bank.name, bank.course, bank.chapter, ...bank.tags].join(" ").toLowerCase();
+    const text = [getBankTitle(bank), bank.course, bank.chapter, ...(bank.tags || [])].join(" ").toLowerCase();
     return text.includes(keyword);
   });
+}
+
+function getBankTitle(bank) {
+  return cleanText(bank?.course) || cleanText(bank?.name) || "未命名课程";
+}
+
+function buildBankName(course, chapter, fallback = "") {
+  return [cleanText(course), cleanText(chapter)].filter(Boolean).join(" - ") || cleanText(String(fallback).replace(/\.[^.]+$/, "")) || "未命名题库";
+}
+
+function vibrateWrongFeedback() {
+  try {
+    if ("vibrate" in navigator) navigator.vibrate([35, 25, 35]);
+  } catch {
+    // Some browsers, especially iOS Safari, do not support vibration.
+  }
 }
 
 function countQuestionTypes(questions) {
