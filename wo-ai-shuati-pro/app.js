@@ -37,7 +37,6 @@ const view = document.querySelector("#view");
 const toast = document.querySelector("#toast");
 let dbPromise = null;
 let toastTimer = null;
-let deferredInstallPrompt = null;
 
 boot();
 
@@ -102,21 +101,6 @@ function bindGlobalEvents() {
   view.addEventListener("submit", handleViewSubmit);
   view.addEventListener("change", handleViewChange);
   view.addEventListener("input", handleViewInput);
-
-  window.addEventListener("beforeinstallprompt", (event) => {
-    event.preventDefault();
-    deferredInstallPrompt = event;
-    const button = document.querySelector("#installButton");
-    button.hidden = false;
-  });
-
-  document.querySelector("#installButton").addEventListener("click", async () => {
-    if (!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-    document.querySelector("#installButton").hidden = true;
-  });
 }
 
 async function handleViewClick(event) {
@@ -284,7 +268,6 @@ function renderBanks() {
           <input id="xlsxFile" name="file" type="file" accept=".xlsx" required />
         </div>
         <button class="button" type="submit">导入为新题库</button>
-        <p class="subtle">格式：A题干，B正确答案，C解析，D-J选项A-G。单字母为单选，多字母为多选，正确/错误为判断。</p>
       </form>
 
       <section class="panel">
@@ -653,7 +636,6 @@ function renderResult(question, result) {
       }</div>`;
   return `
     <section class="result-box ${result.correct ? "good" : "bad"}">
-      <strong>${result.correct ? "答对了" : "答错了"}</strong>
       <div>正确答案：${escapeHtml(answerText)}</div>
       <div class="explanation">${escapeHtml(question.analysis || "暂无解析。")}</div>
       ${wrongAction}
@@ -1146,7 +1128,7 @@ async function submitAnswer() {
   await refreshBanks();
   persistPracticeSession();
   if (!correct) vibrateWrongFeedback();
-  showToast(correct ? "答对了" : "答错了");
+  showToast("已提交");
   render();
 }
 
