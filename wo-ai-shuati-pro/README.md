@@ -25,21 +25,40 @@ http://localhost:4174/
 
 ## 云端配置
 
-1. 创建 Supabase 项目。
-2. 在 Supabase SQL Editor 运行 `supabase/schema.sql`。
-3. 复制 `config.example.js` 的内容到 `config.js`。
-4. 填入：
+当前项目已经填好 `config.js`：
 
 ```js
 export const PRO_CONFIG = {
-  supabaseUrl: "https://你的项目.supabase.co",
-  supabaseAnonKey: "你的 Supabase anon public key",
-  appUrl: "https://你的域名/wo-ai-shuati-pro/",
+  supabaseUrl: "https://vsrafuabubzwfnesryju.supabase.co",
+  supabaseAnonKey: "sb_publishable_8zf8ucL8uQjj-3F6PYMlWA_VY1fm69F",
+  appUrl: "https://vocal-fox-448262.netlify.app/",
 };
 ```
 
-5. 在 Supabase Auth 里打开 Email 登录。
-6. 在 URL Configuration 里把 `appUrl` 加到 Redirect URLs。
+`supabaseAnonKey` 是浏览器端可用的公开 key，可以放在静态网页里；不要把 Supabase 的 `service_role` key 写进前端文件。
+
+你还需要在 Supabase 网页里完成下面几步：
+
+1. 打开 Supabase 项目，左侧进入 `SQL Editor`。
+2. 点击 `New query`。
+3. 打开本项目的 `supabase/schema.sql`，复制全部 SQL。
+4. 粘贴到 Supabase 的 SQL 编辑器里，点击 `Run`。
+5. 运行成功后，左侧进入 `Table Editor`，应该能看到 `profiles`、`question_banks`、`questions`、`question_progress` 四张表。
+6. 左侧进入 `Authentication` -> `Providers`，确认 `Email` 已启用。
+7. 进入 `Authentication` -> `URL Configuration`，把 `Site URL` 设置为：
+
+```text
+https://vocal-fox-448262.netlify.app/
+```
+
+8. 在 `Redirect URLs` 里也加入：
+
+```text
+https://vocal-fox-448262.netlify.app/
+http://localhost:4174/
+```
+
+9. 提交代码并等待 Netlify 重新部署，然后打开线上地址测试邮箱登录、设置用户名、导入题库和公开发布。
 
 ## Apple ID 登录
 

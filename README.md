@@ -104,10 +104,23 @@ http://localhost:4174/
 如果要启用登录、云同步、公开题库和个人主页：
 
 1. 创建 Supabase 项目。
-2. 在 Supabase SQL Editor 运行 `wo-ai-shuati-pro/supabase/schema.sql`。
-3. 参考 `wo-ai-shuati-pro/config.example.js` 填写 `wo-ai-shuati-pro/config.js`。
+2. 在 Supabase SQL Editor 新建 Query，复制并运行 `wo-ai-shuati-pro/supabase/schema.sql`。
+3. 填写 `wo-ai-shuati-pro/config.js`。当前项目使用：
+
+```js
+export const PRO_CONFIG = {
+  supabaseUrl: "https://vsrafuabubzwfnesryju.supabase.co",
+  supabaseAnonKey: "sb_publishable_8zf8ucL8uQjj-3F6PYMlWA_VY1fm69F",
+  appUrl: "https://vocal-fox-448262.netlify.app/",
+};
+```
+
 4. 在 Supabase Auth 中启用 Email 登录。
-5. 在 Redirect URLs 中加入你的部署地址。
+5. 在 Auth 的 URL Configuration 中设置：
+   - `Site URL`：`https://vocal-fox-448262.netlify.app/`
+   - `Redirect URLs`：`https://vocal-fox-448262.netlify.app/` 和 `http://localhost:4174/`
+
+`supabaseAnonKey` 是公开客户端 key；不要把 Supabase 的 `service_role` key 写进前端文件。
 
 Apple ID 登录还需要额外配置 Apple Developer 的 Sign in with Apple。
 
