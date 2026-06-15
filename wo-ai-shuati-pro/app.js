@@ -6,6 +6,7 @@ const STORE_BANKS = "banks";
 const STORE_QUESTIONS = "questions";
 const STORE_PROGRESS = "progress";
 const CURRENT_BANK_KEY = "wo-ai-shuati-pro-current-bank";
+const PRACTICE_SESSION_KEY = "wo-ai-shuati-pro-practice-session";
 
 const state = {
   view: "banks",
@@ -150,6 +151,9 @@ async function handleViewClick(event) {
   if (action === "start-practice") {
     startPractice();
   }
+  if (action === "resume-practice") {
+    resumePractice();
+  }
   if (action === "choose-option") {
     chooseOption(target.dataset.value);
   }
@@ -231,6 +235,11 @@ function handleViewInput(event) {
   }
   if (event.target.matches("#discoverSearch")) {
     state.discoverQuery = event.target.value.trim();
+  }
+  if (event.target.matches("#fillAnswer")) {
+    const fillValue = cleanText(event.target.value || "");
+    state.selected = fillValue ? new Set([fillValue]) : new Set();
+    persistPracticeSession();
   }
 }
 
@@ -494,6 +503,8 @@ function renderPractice() {
 
   const summary = getCurrentSummary();
   const current = state.queue[state.queueIndex];
+  const savedSession = current ? null : getValidPracticeSession();
+  const startButtonLabel = current || savedSession ? "重新开始" : "开始练习";
   const modes = [
     ["sequential", "顺序"],
     ["random", "随机"],
@@ -514,21 +525,28 @@ function renderPractice() {
       <div class="chip-row">
         ${modes.map(([mode, label]) => `<button class="mode-chip ${state.practiceMode === mode ? "is-active" : ""}" type="button" data-action="set-mode" data-mode="${mode}">${label}</button>`).join("")}
       </div>
-      <div class="actions" style="margin-top:12px;">
-        <button class="button" type="button" data-action="start-practice">生成练习</button>
+      <div class="actions practice-actions">
+        <button class="ghost-button" type="button" data-action="start-practice">${startButtonLabel}</button>
       </div>
     </section>
-    ${current ? renderQuestionCard(current) : renderQueueEmpty()}
+    ${current ? renderQuestionCard(current) : renderQueueEmpty(savedSession)}
   `;
 }
 
-function renderQueueEmpty() {
+function renderQueueEmpty(savedSession = getValidPracticeSession()) {
   const count = buildQueue(state.practiceMode).length;
+  const hasResume = Boolean(savedSession);
+  const resumeText = hasResume
+    ? `${modeName(savedSession.mode)} · 第 ${savedSession.queueIndex + 1}/${savedSession.queueIds.length} 题`
+    : "";
   return `
-    <section class="empty-state">
-      <h2>${count ? "准备开始" : "这个模式暂无题目"}</h2>
-      <p>${count ? `当前模式有 ${count} 道题，点击“生成练习”开始。` : "可以换一个模式，或者先完成一些题目。 "}</p>
-      ${count ? `<button class="button" type="button" data-action="start-practice">开始这一组</button>` : ""}
+    <section class="empty-state practice-start">
+      <h2>${hasResume ? "继续上次练习" : count ? "准备开始" : "这个模式暂无题目"}</h2>
+      <p>${hasResume ? `已保存上次进度：${resumeText}。` : count ? `当前模式有 ${count} 道题。` : "可以换一个模式，或者先完成一些题目。 "}</p>
+      <div class="actions question-actions">
+        ${hasResume && count ? `<button class="ghost-button" type="button" data-action="start-practice">重新开始</button>` : ""}
+        ${hasResume ? `<button class="button primary-action" type="button" data-action="resume-practice">继续上次</button>` : count ? `<button class="button primary-action" type="button" data-action="start-practice">开始练习</button>` : ""}
+      </div>
     </section>
   `;
 }
@@ -553,9 +571,9 @@ function renderQuestionCard(question) {
       <p class="stem">${escapeHtml(question.stem)}</p>
       ${question.type === "fill" ? renderFillInput() : `<div class="option-list">${question.options.map((option) => renderOption(question, option)).join("")}</div>`}
       ${state.submitted && result ? renderResult(question, result) : ""}
-      <div class="actions">
-        ${state.submitted ? `<button class="button" type="button" data-action="next-question">${state.queueIndex + 1 >= state.queue.length ? "完成本组" : "下一题"}</button>` : `<button class="button" type="button" data-action="submit-answer">提交答案</button>`}
-        <button class="ghost-button" type="button" data-action="start-practice">重排本组</button>
+      <div class="actions question-actions">
+        <button class="ghost-button" type="button" data-action="start-practice">重新开始</button>
+        ${state.submitted ? `<button class="button primary-action" type="button" data-action="next-question">${state.queueIndex + 1 >= state.queue.length ? "完成本组" : "下一题"}</button>` : `<button class="button primary-action" type="button" data-action="submit-answer">提交答案</button>`}
       </div>
     </article>
   `;
@@ -998,7 +1016,26 @@ function startPractice() {
   state.lastResult = null;
   if (!state.queue.length) {
     showToast("当前模式暂无题目");
+  } else {
+    persistPracticeSession();
   }
+  render();
+}
+
+function resumePractice() {
+  const session = getValidPracticeSession();
+  if (!session) {
+    showToast("没有可继续的练习");
+    return;
+  }
+  const byId = new Map(state.questions.map((question) => [question.id, question]));
+  state.practiceMode = session.mode;
+  state.queue = session.queueIds.map((id) => byId.get(id)).filter(Boolean);
+  state.queueIndex = Math.min(session.queueIndex, Math.max(state.queue.length - 1, 0));
+  state.selected = new Set(session.selected || []);
+  state.submitted = Boolean(session.submitted);
+  state.lastResult = session.lastResult || null;
+  persistPracticeSession();
   render();
 }
 
@@ -1029,6 +1066,7 @@ function chooseOption(value) {
   } else {
     state.selected = new Set([value]);
   }
+  persistPracticeSession();
   render();
 }
 
@@ -1065,12 +1103,14 @@ async function submitAnswer() {
   await putRecord(STORE_PROGRESS, next);
   await updateBankLastStudied(question.bankId);
   await refreshBanks();
+  persistPracticeSession();
   showToast(correct ? "答对了" : "记到错题本了");
   render();
 }
 
 function nextQuestion() {
   if (state.queueIndex + 1 >= state.queue.length) {
+    clearPracticeSession(state.currentBankId);
     resetPracticeQueue();
     showToast("这一组完成了");
     render();
@@ -1080,7 +1120,53 @@ function nextQuestion() {
   state.selected = new Set();
   state.submitted = false;
   state.lastResult = null;
+  persistPracticeSession();
   render();
+}
+
+function persistPracticeSession() {
+  if (!state.currentBankId || !state.queue.length) return;
+  const payload = {
+    bankId: state.currentBankId,
+    mode: state.practiceMode,
+    queueIds: state.queue.map((question) => question.id),
+    queueIndex: state.queueIndex,
+    selected: [...state.selected],
+    submitted: state.submitted,
+    lastResult: state.lastResult,
+    updatedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(PRACTICE_SESSION_KEY, JSON.stringify(payload));
+}
+
+function readPracticeSession() {
+  try {
+    return JSON.parse(localStorage.getItem(PRACTICE_SESSION_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function getValidPracticeSession() {
+  const session = readPracticeSession();
+  if (!session || session.bankId !== state.currentBankId || !Array.isArray(session.queueIds)) return null;
+  const knownIds = new Set(state.questions.map((question) => question.id));
+  const queueIds = session.queueIds.filter((id) => knownIds.has(id));
+  if (!queueIds.length) return null;
+  return {
+    ...session,
+    mode: session.mode || "sequential",
+    queueIds,
+    queueIndex: Math.min(Math.max(Number(session.queueIndex) || 0, 0), queueIds.length - 1),
+    selected: Array.isArray(session.selected) ? session.selected : [],
+  };
+}
+
+function clearPracticeSession(bankId = "") {
+  const session = readPracticeSession();
+  if (!bankId || !session || session.bankId === bankId) {
+    localStorage.removeItem(PRACTICE_SESSION_KEY);
+  }
 }
 
 function buildSelectedAnswer(question) {
@@ -1166,6 +1252,7 @@ async function deleteBank(id) {
   if (!bank) return;
   if (!confirm(`确定删除题库“${bank.name}”吗？相关练习记录也会删除。`)) return;
   await deleteBankCascade(id);
+  clearPracticeSession(id);
   if (state.currentBankId === id) {
     state.currentBankId = "";
     localStorage.removeItem(CURRENT_BANK_KEY);
@@ -1201,6 +1288,7 @@ async function importBackup(file) {
     }
     if (!confirm("导入备份会覆盖当前本地数据，确定继续吗？")) return;
     await clearStores();
+    clearPracticeSession();
     await putMany(STORE_BANKS, backup.banks);
     await putMany(STORE_QUESTIONS, backup.questions);
     await putMany(STORE_PROGRESS, backup.progress || []);
@@ -1226,6 +1314,7 @@ async function clearAllData() {
   state.progress = new Map();
   state.currentBankId = "";
   localStorage.removeItem(CURRENT_BANK_KEY);
+  clearPracticeSession();
   resetPracticeQueue();
   showToast("已清空");
   render();

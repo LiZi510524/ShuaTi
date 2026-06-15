@@ -15,7 +15,7 @@
   --danger-soft: #fee2e2;
   --warning: #d97706;
   --warning-soft: #fef3c7;
-  --shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
   --radius: 8px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -31,9 +31,7 @@ body {
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 12% -10%, rgba(37, 99, 235, 0.16), transparent 28rem),
-    linear-gradient(180deg, #f8fbff 0%, var(--bg) 42%, #f1f5f9 100%);
+  background: var(--bg);
   color: var(--text);
 }
 
@@ -66,22 +64,15 @@ code {
   width: min(100%, 920px);
   min-height: 100vh;
   margin: 0 auto;
-  padding: calc(14px + env(safe-area-inset-top)) 14px calc(90px + env(safe-area-inset-bottom));
+  padding: calc(10px + env(safe-area-inset-top)) 14px calc(90px + env(safe-area-inset-bottom));
 }
 
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 2px 18px;
-}
-
-.eyebrow {
-  margin: 0 0 4px;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 700;
+  justify-content: flex-end;
+  min-height: 0;
+  padding: 0 2px 8px;
 }
 
 h1,
@@ -122,9 +113,9 @@ h3 {
 .bank-card,
 .stat-card,
 .empty-state {
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--surface);
   box-shadow: var(--shadow);
 }
 
@@ -135,6 +126,10 @@ h3 {
 .empty-state {
   padding: 22px 16px;
   text-align: center;
+}
+
+.practice-start {
+  text-align: left;
 }
 
 .empty-state p {
@@ -218,6 +213,20 @@ h3 {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.practice-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.question-actions {
+  width: 100%;
+  justify-content: space-between;
+}
+
+.question-actions .primary-action {
+  margin-left: auto;
 }
 
 .button,
