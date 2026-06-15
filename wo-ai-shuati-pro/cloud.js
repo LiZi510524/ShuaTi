@@ -42,13 +42,6 @@ export const cloud = {
       },
     });
   },
-  signInWithApple() {
-    assertConfigured(this.config);
-    const url = new URL(`${this.config.supabaseUrl}/auth/v1/authorize`);
-    url.searchParams.set("provider", "apple");
-    url.searchParams.set("redirect_to", redirectUrl(this.config));
-    location.href = url.toString();
-  },
   async getUser() {
     assertConfigured(this.config);
     const session = requireSession();

@@ -186,9 +186,6 @@ async function handleViewClick(event) {
   if (action === "send-login-link") {
     await sendLoginLink();
   }
-  if (action === "login-apple") {
-    cloud.signInWithApple();
-  }
   if (action === "sign-out") {
     await signOutCloud();
   }
@@ -404,13 +401,11 @@ function renderAccount() {
   const bank = getCurrentBank();
   const summary = bank ? getCurrentSummary() : null;
   view.innerHTML = `
-    <section class="panel">
-      <h2>我的账号</h2>
-      ${renderCloudStatus()}
-    </section>
+    ${renderAccountHero()}
+    ${renderEmailAccountPanel()}
     ${renderProfileForm()}
     ${bank ? `
-      <section class="panel">
+      <section class="panel account-section">
         <h2>当前题库统计</h2>
         <p class="subtle">${escapeHtml(getBankTitle(bank))}</p>
         <div class="metric-row">
@@ -427,32 +422,78 @@ function renderAccount() {
   `;
 }
 
-function renderCloudStatus() {
+function renderAccountHero() {
+  const label = state.cloudUser ? (state.cloudProfile?.display_name || state.cloudProfile?.username || state.cloudUser.email || "已登录") : "本地学习";
+  const subtitle = state.cloudUser
+    ? state.cloudUser.email || "邮箱账号已连接"
+    : state.cloudConfigured
+      ? "邮箱登录后可发布题库和同步记录"
+      : "当前为本地模式，题库和练习记录保存在本机";
+  const badge = state.cloudUser ? "已登录" : state.cloudConfigured ? "可登录" : "本地";
+  return `
+    <section class="panel account-hero">
+      <div class="account-main">
+        <div class="account-avatar">${escapeHtml(getAvatarText(label))}</div>
+        <div>
+          <h2>${escapeHtml(label)}</h2>
+          <p class="subtle">${escapeHtml(subtitle)}</p>
+        </div>
+      </div>
+      <span class="type-pill ${state.cloudUser ? "good" : ""}">${escapeHtml(badge)}</span>
+    </section>
+  `;
+}
+
+function renderEmailAccountPanel() {
   if (!state.cloudConfigured) {
     return `
-      <p class="subtle">云端尚未配置。填写 <code>config.js</code> 后可启用邮箱登录、Apple 登录、云同步和题库广场。</p>
-      <div class="result-box bad">当前仍可作为本地 Pro 版使用，旧版数据不会受影响。</div>
+      <section class="panel account-section">
+        <h2>账号</h2>
+        <div class="setting-list">
+          <div class="setting-row">
+            <div>
+              <strong>本地模式</strong>
+              <p class="subtle">云端尚未配置。填写 <code>config.js</code> 后可启用邮箱登录、云同步和题库广场。</p>
+            </div>
+          </div>
+        </div>
+      </section>
     `;
   }
   if (!state.cloudUser) {
     return `
-      <p class="subtle">使用邮箱验证码登录。Apple 登录需要在 Supabase 和 Apple Developer 后台配置后启用。</p>
-      <div class="field">
-        <label for="loginEmail">邮箱</label>
-        <input id="loginEmail" type="email" placeholder="you@example.com" />
-      </div>
-      <div class="actions">
-        <button class="button" type="button" data-action="send-login-link">发送登录链接</button>
-        <button class="ghost-button" type="button" data-action="login-apple">Apple ID 登录</button>
-      </div>
+      <section class="panel account-section form-grid">
+        <h2>邮箱登录</h2>
+        <p class="subtle">输入邮箱后会发送登录链接。新邮箱首次点击链接会自动创建账号，已注册邮箱会直接登录。</p>
+        <div class="field">
+          <label for="loginEmail">邮箱</label>
+          <input id="loginEmail" type="email" placeholder="you@example.com" />
+        </div>
+        <div class="actions account-actions">
+          <button class="button" type="button" data-action="send-login-link">发送登录链接</button>
+        </div>
+      </section>
     `;
   }
   return `
-    <p class="subtle">已登录：${escapeHtml(state.cloudUser.email || state.cloudUser.id)}</p>
-    <p class="subtle">云端接口版本：${escapeHtml(CLOUD_API_VERSION)}</p>
-    <div class="actions">
-      <button class="danger-button" type="button" data-action="sign-out">退出登录</button>
-    </div>
+    <section class="panel account-section">
+      <h2>账号</h2>
+      <div class="setting-list">
+        <div class="setting-row">
+          <div>
+            <strong>邮箱</strong>
+            <p class="subtle">${escapeHtml(state.cloudUser.email || state.cloudUser.id)}</p>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>云端接口</strong>
+            <p class="subtle">版本 ${escapeHtml(CLOUD_API_VERSION)}</p>
+          </div>
+          <button class="danger-button" type="button" data-action="sign-out">退出登录</button>
+        </div>
+      </div>
+    </section>
   `;
 }
 
@@ -460,7 +501,7 @@ function renderProfileForm() {
   if (!state.cloudConfigured || !state.cloudUser) return "";
   const profile = state.cloudProfile || {};
   return `
-    <section class="panel form-grid">
+    <section class="panel form-grid account-section">
       <h2>个人主页</h2>
       <p class="subtle">别人可以通过用户名找到你的主页，也可以通过公开题库 ID 找到你的题库。</p>
       <div class="form-grid two">
@@ -709,7 +750,7 @@ function renderSettings() {
 
 function renderSettingsContent() {
   return `
-    <section class="panel">
+    <section class="panel account-section">
       <h2>设置与备份</h2>
       <p class="subtle">题库和练习记录保存在本机 IndexedDB。建议定期导出备份，避免清理 Safari 数据后丢失。</p>
       <div class="grid">
@@ -720,10 +761,6 @@ function renderSettingsContent() {
         </div>
         <button class="danger-button" type="button" data-action="clear-all">清空所有数据</button>
       </div>
-    </section>
-    <section class="panel">
-      <h2>Excel 规范</h2>
-      <p class="subtle">A列题干，B列正确答案，C列解析，D-J列选项A-G。B列为 A 这种单字母时识别为单选，ABCD 这种多字母识别为多选，正确/错误/对/错识别为判断。</p>
     </section>
   `;
 }
@@ -1639,6 +1676,11 @@ function getBankTitle(bank) {
 
 function buildBankName(course, chapter, fallback = "") {
   return [cleanText(course), cleanText(chapter)].filter(Boolean).join(" - ") || cleanText(String(fallback).replace(/\.[^.]+$/, "")) || "未命名题库";
+}
+
+function getAvatarText(value) {
+  const text = cleanText(value);
+  return text ? text.slice(0, 1).toUpperCase() : "我";
 }
 
 function vibrateWrongFeedback() {

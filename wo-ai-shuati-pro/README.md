@@ -3,7 +3,6 @@
 这是“我爱刷题”的 Pro 版 PWA。基础版保持纯本地离线使用；Pro 版在本地题库能力上增加：
 
 - 邮箱登录
-- Apple ID 登录入口
 - Supabase 云同步
 - 公开发布题库
 - 通过用户名查看公开主页
@@ -75,18 +74,6 @@ https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/
 ```text
 https://lizi510524.github.io/ShuaTi/
 ```
-
-## Apple ID 登录
-
-Apple 登录需要额外配置：
-
-- Apple Developer 账号
-- Services ID
-- Sign in with Apple Key
-- 域名和回调地址
-- Supabase Auth Apple Provider
-
-没有配置 Apple Provider 时，邮箱登录和本地刷题仍然可用。
 
 ## 发布公开题库
 

@@ -68,14 +68,14 @@
 ### 当前能力
 
 - 导入 `.xlsx` 题库。
-- 多题库管理：题库名、课程、章节、标签。
+- 多题库管理：课程、章节、标签。
 - 顺序刷题、随机刷题、错题、收藏、未做题。
 - 单选、多选、判断、基础填空。
 - 答题后显示正确答案和解析。
 - 错题本、收藏、统计。
 - 本地 IndexedDB 保存数据。
 - JSON 备份与恢复。
-- Pro 云端接口：邮箱登录、Apple 登录入口、公开题库、个人主页、题库 ID 分享、练习记录同步。
+- Pro 云端接口：邮箱登录、公开题库、个人主页、题库 ID 分享、练习记录同步。
 
 ### 本地运行
 
@@ -143,8 +143,6 @@ https://lizi510524.github.io/ShuaTi/
 ```
 
 `supabaseAnonKey` 是公开客户端 key；不要把 Supabase 的 `service_role` key 写进前端文件。
-
-Apple ID 登录还需要额外配置 Apple Developer 的 Sign in with Apple。
 
 ## 开发说明
 
