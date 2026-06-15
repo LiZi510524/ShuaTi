@@ -1,4 +1,4 @@
-const CACHE_NAME = "wo-ai-shuati-pro-v2";
+const CACHE_NAME = "wo-ai-shuati-pro-v3";
 const CORE_ASSETS = [
   "./",
   "./index.html",

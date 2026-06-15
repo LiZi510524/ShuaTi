@@ -570,11 +570,11 @@ function renderQuestionCard(question) {
       <div class="progress-track"><div class="progress-fill" style="width:${percent}%"></div></div>
       <p class="stem">${escapeHtml(question.stem)}</p>
       ${question.type === "fill" ? renderFillInput() : `<div class="option-list">${question.options.map((option) => renderOption(question, option)).join("")}</div>`}
-      ${state.submitted && result ? renderResult(question, result) : ""}
       <div class="actions question-actions">
         <button class="ghost-button" type="button" data-action="start-practice">重新开始</button>
         ${state.submitted ? `<button class="button primary-action" type="button" data-action="next-question">${state.queueIndex + 1 >= state.queue.length ? "完成本组" : "下一题"}</button>` : `<button class="button primary-action" type="button" data-action="submit-answer">提交答案</button>`}
       </div>
+      ${state.submitted && result ? renderResult(question, result) : ""}
     </article>
   `;
 }
@@ -1328,8 +1328,8 @@ async function readXlsxRows(file) {
   const parser = new DOMParser();
   const workbook = parser.parseFromString(workbookXml, "application/xml");
   const rels = parser.parseFromString(relsXml, "application/xml");
-  const sheets = [...workbook.getElementsByTagName("sheet")];
-  const relMap = new Map([...rels.getElementsByTagName("Relationship")].map((rel) => [rel.getAttribute("Id"), rel.getAttribute("Target")]));
+  const sheets = getXmlElements(workbook, "sheet");
+  const relMap = new Map(getXmlElements(rels, "Relationship").map((rel) => [rel.getAttribute("Id"), rel.getAttribute("Target")]));
   const selectedSheet = sheets.find((sheet) => /任选|导入|题/.test(sheet.getAttribute("name") || "")) || sheets[0];
   if (!selectedSheet) throw new Error("Excel 中没有工作表");
   const relId = selectedSheet.getAttribute("r:id") || selectedSheet.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id");
@@ -1345,16 +1345,16 @@ function parseSharedStrings(entries) {
   if (!entries.has("xl/sharedStrings.xml")) return [];
   const xml = getTextEntry(entries, "xl/sharedStrings.xml");
   const doc = new DOMParser().parseFromString(xml, "application/xml");
-  return [...doc.getElementsByTagName("si")].map((item) => {
-    return [...item.getElementsByTagName("t")].map((text) => text.textContent || "").join("");
+  return getXmlElements(doc, "si").map((item) => {
+    return getXmlElements(item, "t").map((text) => text.textContent || "").join("");
   });
 }
 
 function parseSheetRows(sheetXml, sharedStrings) {
   const doc = new DOMParser().parseFromString(sheetXml, "application/xml");
-  return [...doc.getElementsByTagName("row")].map((row) => {
+  return getXmlElements(doc, "row").map((row) => {
     const values = [];
-    [...row.getElementsByTagName("c")].forEach((cell, fallbackIndex) => {
+    getXmlElements(row, "c").forEach((cell, fallbackIndex) => {
       const ref = cell.getAttribute("r");
       const index = ref ? columnIndex(ref) : fallbackIndex;
       values[index] = parseCell(cell, sharedStrings);
@@ -1366,11 +1366,15 @@ function parseSheetRows(sheetXml, sharedStrings) {
 function parseCell(cell, sharedStrings) {
   const type = cell.getAttribute("t");
   if (type === "inlineStr") {
-    return [...cell.getElementsByTagName("t")].map((item) => item.textContent || "").join("");
+    return getXmlElements(cell, "t").map((item) => item.textContent || "").join("");
   }
-  const value = cell.getElementsByTagName("v")[0]?.textContent || "";
+  const value = getXmlElements(cell, "v")[0]?.textContent || "";
   if (type === "s") return sharedStrings[Number(value)] || "";
   return value;
+}
+
+function getXmlElements(parent, localName) {
+  return [...parent.getElementsByTagName("*")].filter((element) => element.localName === localName || element.nodeName.split(":").pop() === localName);
 }
 
 async function unzip(buffer) {
