@@ -1,4 +1,5 @@
 import { cloud, CLOUD_API_VERSION } from "./cloud.js";
+import { findSavedPublicBank, getPublishBlocker, isProfileComplete, mapPublicBankToLocal } from "./public-bank-domain.js";
 
 const DB_NAME = "wo-ai-shuati-pro-db";
 const DB_VERSION = 1;
@@ -457,7 +458,7 @@ function renderEmailAccountPanel() {
     return `
       <section class="panel account-section form-grid">
         <h2>邮箱登录</h2>
-        <p class="subtle">输入邮箱后会发送登录链接。新邮箱首次点击链接会自动创建账号，已注册邮箱会直接登录。</p>
+        <p class="subtle">输入邮箱后会发送登录链接。本项目不设置密码，也不会公开展示你的邮箱。</p>
         <div class="field">
           <label for="loginEmail">邮箱</label>
           <input id="loginEmail" type="email" placeholder="you@example.com" />
@@ -496,7 +497,7 @@ function renderProfileForm() {
   return `
     <section class="panel form-grid account-section">
       <h2>个人主页</h2>
-      <p class="subtle">别人可以通过用户名找到你的主页，也可以通过公开题库 ID 找到你的题库。</p>
+      <p class="subtle">发布题库前需要设置公开用户名和昵称。公开题库会展示这些署名信息，但不会展示邮箱。</p>
       <div class="form-grid two">
         <div class="field">
           <label for="profileUsername">用户名</label>
@@ -814,16 +815,29 @@ async function importQuestionBank(formData) {
   }
 }
 
+function routeToAccountWithMessage(message) {
+  state.view = "account";
+  showToast(message);
+  render();
+}
+
 async function publishLocalBank(bankId) {
   try {
-    if (!state.cloudConfigured) throw new Error("请先配置 Supabase");
-    if (!state.cloudUser) throw new Error("请先登录");
-    if (!state.cloudProfile?.username) throw new Error("请先在“我的”里设置用户名");
+    const blocker = getPublishBlocker({
+      cloudConfigured: state.cloudConfigured,
+      cloudUser: state.cloudUser,
+      cloudProfile: state.cloudProfile,
+    });
+    if (blocker) {
+      routeToAccountWithMessage(blocker);
+      return;
+    }
     const bank = state.banks.find((item) => item.id === bankId);
     if (!bank) throw new Error("找不到题库");
     const questions = await getByIndex(STORE_QUESTIONS, "bankId", bankId);
     if (!questions.length) throw new Error("题库里没有题目");
-    if (!confirm(`确定公开发布“${getBankTitle(bank)}”吗？别人可以搜索并保存这个题库。`)) return;
+    const message = `确定公开发布“${getBankTitle(bank)}”吗？\n\n公开后，题目、正确答案和解析都会被其他人搜索、查看和保存。你的邮箱不会公开展示，公开署名为 @${state.cloudProfile.username}。`;
+    if (!confirm(message)) return;
     showToast("正在发布题库...");
     const cloudId = await cloud.publishBank(bank, questions.sort((a, b) => a.order - b.order), state.cloudProfile, "public");
     const updated = {
@@ -868,10 +882,12 @@ async function saveProfile() {
     if (!state.cloudUser) throw new Error("请先登录");
     const username = normalizeUsername(document.querySelector("#profileUsername")?.value || "");
     if (!username) throw new Error("用户名不能为空");
+    const displayName = cleanText(document.querySelector("#profileDisplay")?.value || "");
+    if (!displayName) throw new Error("昵称不能为空");
     const profile = {
       id: state.cloudUser.id,
       username,
-      display_name: cleanText(document.querySelector("#profileDisplay")?.value || username),
+      display_name: displayName,
       bio: cleanText(document.querySelector("#profileBio")?.value || ""),
     };
     state.cloudProfile = await cloud.upsertProfile(profile);
