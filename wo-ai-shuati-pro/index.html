@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="我爱刷题 Pro" />
+    <title>我爱刷题 Pro</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">云同步题库社区</p>
+          <h1>我爱刷题 Pro</h1>
+        </div>
+        <button id="installButton" class="icon-button" type="button" title="安装到主屏幕" hidden>
+          <span aria-hidden="true">↓</span>
+        </button>
+      </header>
+
+      <main id="view" class="view" aria-live="polite"></main>
+
+      <nav class="tabbar" aria-label="主导航">
+        <button class="tab-button is-active" type="button" data-view="banks" title="题库">
+          <span class="tab-icon">▦</span>
+          <span>题库</span>
+        </button>
+        <button class="tab-button" type="button" data-view="practice" title="刷题">
+          <span class="tab-icon">▶</span>
+          <span>刷题</span>
+        </button>
+        <button class="tab-button" type="button" data-view="discover" title="发现">
+          <span class="tab-icon">⌕</span>
+          <span>发现</span>
+        </button>
+        <button class="tab-button" type="button" data-view="wrong" title="错题">
+          <span class="tab-icon">!</span>
+          <span>错题</span>
+        </button>
+        <button class="tab-button" type="button" data-view="account" title="我的">
+          <span class="tab-icon">⚙</span>
+          <span>我的</span>
+        </button>
+      </nav>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
