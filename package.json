@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node tools/dev-server.mjs",
     "fixture:smoke": "node tools/create-smoke-fixture.mjs",
-    "test": "npm run fixture:smoke && npm run test:smoke",
+    "test": "npm run test:unit && npm run fixture:smoke && npm run test:smoke",
+    "test:unit": "node --test wo-ai-shuati-pro/*.test.mjs",
     "test:app": "node wo-ai-shuati-pro/smoke-test.mjs",
     "test:smoke": "node tools/run-smoke-test.mjs"
   },
