@@ -1,0 +1,18 @@
+# Dependencies and local tooling
+node_modules/
+.vscode/
+
+# Local runtime files
+*.log
+*.tmp
+*.bak
+
+# Generated previews / intermediate exports
+*-预览.png
+*-preview.json
+导论习题库-导题模板.xlsx
+
+# Local secrets. Keep config.example.js tracked.
+*.local
+.env
+.env.*
