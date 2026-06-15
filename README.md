@@ -111,14 +111,36 @@ http://localhost:4174/
 export const PRO_CONFIG = {
   supabaseUrl: "https://vsrafuabubzwfnesryju.supabase.co",
   supabaseAnonKey: "sb_publishable_8zf8ucL8uQjj-3F6PYMlWA_VY1fm69F",
-  appUrl: "https://vocal-fox-448262.netlify.app/",
+  appUrl: "https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/",
 };
 ```
 
 4. 在 Supabase Auth 中启用 Email 登录。
 5. 在 Auth 的 URL Configuration 中设置：
-   - `Site URL`：`https://vocal-fox-448262.netlify.app/`
-   - `Redirect URLs`：`https://vocal-fox-448262.netlify.app/` 和 `http://localhost:4174/`
+   - `Site URL`：`https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/`
+   - `Redirect URLs`：`https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/`、`https://lizi510524.github.io/ShuaTi/` 和 `http://localhost:4174/`
+
+### GitHub Pages 发布
+
+推荐直接用 GitHub Pages 发布这个静态 PWA：
+
+1. 进入 GitHub 仓库 `LiZi510524/ShuaTi`。
+2. 打开 `Settings` -> `Pages`。
+3. `Build and deployment` 选择 `Deploy from a branch`。
+4. `Branch` 选择 `main`，目录选择 `/ (root)`，保存。
+5. 之后每次把代码 push 到 `main`，GitHub Pages 会自动更新。
+
+线上地址：
+
+```text
+https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/
+```
+
+根地址会自动跳转到 Pro App：
+
+```text
+https://lizi510524.github.io/ShuaTi/
+```
 
 `supabaseAnonKey` 是公开客户端 key；不要把 Supabase 的 `service_role` key 写进前端文件。
 

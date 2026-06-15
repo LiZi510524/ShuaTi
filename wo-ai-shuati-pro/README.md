@@ -31,7 +31,7 @@ http://localhost:4174/
 export const PRO_CONFIG = {
   supabaseUrl: "https://vsrafuabubzwfnesryju.supabase.co",
   supabaseAnonKey: "sb_publishable_8zf8ucL8uQjj-3F6PYMlWA_VY1fm69F",
-  appUrl: "https://vocal-fox-448262.netlify.app/",
+  appUrl: "https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/",
 };
 ```
 
@@ -48,17 +48,33 @@ export const PRO_CONFIG = {
 7. 进入 `Authentication` -> `URL Configuration`，把 `Site URL` 设置为：
 
 ```text
-https://vocal-fox-448262.netlify.app/
+https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/
 ```
 
 8. 在 `Redirect URLs` 里也加入：
 
 ```text
-https://vocal-fox-448262.netlify.app/
+https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/
+https://lizi510524.github.io/ShuaTi/
 http://localhost:4174/
 ```
 
-9. 提交代码并等待 Netlify 重新部署，然后打开线上地址测试邮箱登录、设置用户名、导入题库和公开发布。
+9. 在 GitHub 仓库进入 `Settings` -> `Pages`。
+10. `Build and deployment` 选择 `Deploy from a branch`。
+11. `Branch` 选择 `main`，目录选择 `/ (root)`，点击 `Save`。
+12. 等待 GitHub Pages 部署完成，然后打开线上地址测试邮箱登录、设置用户名、导入题库和公开发布。
+
+线上地址：
+
+```text
+https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/
+```
+
+仓库根地址也会自动跳转到 Pro App：
+
+```text
+https://lizi510524.github.io/ShuaTi/
+```
 
 ## Apple ID 登录
 
