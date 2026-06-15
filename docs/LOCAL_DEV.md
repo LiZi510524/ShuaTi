@@ -42,6 +42,12 @@ npm test
 
 生成最小 Excel 题库 fixture，自动启动本地服务，并用 Playwright 在移动端视口跑一遍导入、生成练习、发现页、我的页流程。
 
+```powershell
+npm run test:unit
+```
+
+运行账号、公开资料、公开题库保存映射相关的纯 JavaScript domain tests。
+
 可以覆盖默认端口和测试文件：
 
 ```powershell
