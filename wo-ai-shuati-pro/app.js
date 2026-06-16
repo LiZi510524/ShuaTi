@@ -1,4 +1,5 @@
 import { cloud, CLOUD_API_VERSION } from "./cloud.js";
+import { findSavedPublicBank, getPublishBlocker, isProfileComplete, mapPublicBankToLocal } from "./public-bank-domain.js";
 
 const DB_NAME = "wo-ai-shuati-pro-db";
 const DB_VERSION = 1;
@@ -371,6 +372,8 @@ function renderProfilePreview(profile) {
 
 function renderPublicBankCard(bank) {
   const tags = [bank.course, bank.chapter, ...(bank.tags || [])].filter(Boolean);
+  const saved = findSavedPublicBank(state.banks, bank.id);
+  const saveLabel = saved ? "打开本地副本" : "保存到我的题库";
   return `
     <article class="bank-card">
       <div class="bank-head">
@@ -382,7 +385,7 @@ function renderPublicBankCard(bank) {
       </div>
       ${tags.length ? `<div class="tag-row">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
       <div class="actions">
-        <button class="button" type="button" data-action="use-public-bank" data-id="${bank.id}">保存到我的题库</button>
+        <button class="button" type="button" data-action="use-public-bank" data-id="${bank.id}">${saveLabel}</button>
         <button class="ghost-button" type="button" data-action="open-owner" data-username="${escapeAttr(bank.owner_username || "")}">看主页</button>
         <button class="ghost-button" type="button" data-action="copy-bank-id" data-id="${bank.id}">复制ID</button>
       </div>
@@ -457,7 +460,7 @@ function renderEmailAccountPanel() {
     return `
       <section class="panel account-section form-grid">
         <h2>邮箱登录</h2>
-        <p class="subtle">输入邮箱后会发送登录链接。新邮箱首次点击链接会自动创建账号，已注册邮箱会直接登录。</p>
+        <p class="subtle">输入邮箱后会发送登录链接。本项目不设置密码，也不会公开展示你的邮箱。</p>
         <div class="field">
           <label for="loginEmail">邮箱</label>
           <input id="loginEmail" type="email" placeholder="you@example.com" />
@@ -496,7 +499,7 @@ function renderProfileForm() {
   return `
     <section class="panel form-grid account-section">
       <h2>个人主页</h2>
-      <p class="subtle">别人可以通过用户名找到你的主页，也可以通过公开题库 ID 找到你的题库。</p>
+      <p class="subtle">发布题库前需要设置公开用户名和昵称。公开题库会展示这些署名信息，但不会展示邮箱。</p>
       <div class="form-grid two">
         <div class="field">
           <label for="profileUsername">用户名</label>
@@ -814,16 +817,29 @@ async function importQuestionBank(formData) {
   }
 }
 
+function routeToAccountWithMessage(message) {
+  state.view = "account";
+  showToast(message);
+  render();
+}
+
 async function publishLocalBank(bankId) {
   try {
-    if (!state.cloudConfigured) throw new Error("请先配置 Supabase");
-    if (!state.cloudUser) throw new Error("请先登录");
-    if (!state.cloudProfile?.username) throw new Error("请先在“我的”里设置用户名");
+    const blocker = getPublishBlocker({
+      cloudConfigured: state.cloudConfigured,
+      cloudUser: state.cloudUser,
+      cloudProfile: state.cloudProfile,
+    });
+    if (blocker) {
+      routeToAccountWithMessage(blocker);
+      return;
+    }
     const bank = state.banks.find((item) => item.id === bankId);
     if (!bank) throw new Error("找不到题库");
     const questions = await getByIndex(STORE_QUESTIONS, "bankId", bankId);
     if (!questions.length) throw new Error("题库里没有题目");
-    if (!confirm(`确定公开发布“${getBankTitle(bank)}”吗？别人可以搜索并保存这个题库。`)) return;
+    const message = `确定公开发布“${getBankTitle(bank)}”吗？\n\n公开后，题目、正确答案和解析都会被其他人搜索、查看和保存。你的邮箱不会公开展示，公开署名为 @${state.cloudProfile.username}。`;
+    if (!confirm(message)) return;
     showToast("正在发布题库...");
     const cloudId = await cloud.publishBank(bank, questions.sort((a, b) => a.order - b.order), state.cloudProfile, "public");
     const updated = {
@@ -868,10 +884,12 @@ async function saveProfile() {
     if (!state.cloudUser) throw new Error("请先登录");
     const username = normalizeUsername(document.querySelector("#profileUsername")?.value || "");
     if (!username) throw new Error("用户名不能为空");
+    const displayName = cleanText(document.querySelector("#profileDisplay")?.value || "");
+    if (!displayName) throw new Error("昵称不能为空");
     const profile = {
       id: state.cloudUser.id,
       username,
-      display_name: cleanText(document.querySelector("#profileDisplay")?.value || username),
+      display_name: displayName,
       bio: cleanText(document.querySelector("#profileBio")?.value || ""),
     };
     state.cloudProfile = await cloud.upsertProfile(profile);
@@ -927,37 +945,27 @@ async function usePublicBank(bankId) {
     showToast("正在保存公开题库...");
     const payload = await cloud.getPublicBank(bankId);
     if (!payload) throw new Error("找不到公开题库");
+    const existing = findSavedPublicBank(state.banks, payload.bank.id);
+    if (existing) {
+      state.currentBankId = existing.id;
+      localStorage.setItem(CURRENT_BANK_KEY, existing.id);
+      await loadCurrentBank();
+      resetPracticeQueue();
+      state.view = "practice";
+      showToast("这个公开题库已经保存过，已打开本地副本");
+      render();
+      return;
+    }
     const localBankId = createId("bank");
     const now = new Date().toISOString();
-    const localQuestions = payload.questions.map((question, index) => ({
-      id: createId("q"),
-      cloudQuestionId: question.id,
-      bankId: localBankId,
-      order: question.order_no || index + 1,
-      stem: question.stem,
-      answer: question.answer,
-      analysis: question.analysis || "",
-      type: question.type,
-      options: question.options || [],
-      createdAt: now,
-    }));
-    const localCourse = cleanText(payload.bank.course || payload.bank.name || "公开题库");
-    const localChapter = cleanText(payload.bank.chapter || "");
-    const localBank = {
-      id: localBankId,
-      cloudId: payload.bank.id,
-      sourceOwnerUsername: payload.bank.owner_username,
-      name: buildBankName(localCourse, localChapter, payload.bank.name),
-      course: localCourse,
-      chapter: localChapter,
-      tags: payload.bank.tags || [],
-      questionCount: localQuestions.length,
-      counts: payload.bank.counts || countQuestionTypes(localQuestions),
-      visibility: "saved-public",
-      createdAt: now,
-      updatedAt: now,
-      lastStudiedAt: "",
-    };
+    const { localBank, localQuestions } = mapPublicBankToLocal({
+      payload,
+      localBankId,
+      now,
+      createQuestionId: () => createId("q"),
+      buildBankName,
+      countQuestionTypes,
+    });
     await saveBankWithQuestions(localBank, localQuestions);
     state.currentBankId = localBankId;
     localStorage.setItem(CURRENT_BANK_KEY, localBankId);
