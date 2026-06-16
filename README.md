@@ -153,29 +153,6 @@ https://lizi510524.github.io/ShuaTi/
 - 本地数据使用 IndexedDB。
 - 云端能力通过 Supabase REST/Auth 接口接入。
 
-### 团队本地开发环境
-
-首次配置：
-
-```powershell
-npm install
-npx playwright install chromium
-```
-
-启动本地开发服务器：
-
-```powershell
-npm run dev
-```
-
-运行 smoke test：
-
-```powershell
-npm test
-```
-
-更多长期维护说明见 `docs/LOCAL_DEV.md`。
-
 后续计划：
 
 - 优化题库广场和个人主页。

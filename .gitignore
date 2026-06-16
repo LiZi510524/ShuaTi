@@ -6,14 +6,11 @@ node_modules/
 *.log
 *.tmp
 *.bak
-dev-server*.log
 
 # Generated previews / intermediate exports
 *-预览.png
 *-preview.json
 导论习题库-导题模板.xlsx
-test-fixtures/
-wo-ai-shuati-pro/smoke-pro.png
 
 # Local secrets. Keep config.example.js tracked.
 *.local
