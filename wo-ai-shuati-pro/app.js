@@ -189,6 +189,9 @@ async function handleViewClick(event) {
   if (action === "send-login-link") {
     await sendLoginLink();
   }
+  if (action === "sign-in-provider") {
+    await signInProvider(target.dataset.provider);
+  }
   if (action === "sign-out") {
     await signOutCloud();
   }
@@ -485,9 +488,9 @@ function renderAccount() {
 function renderAccountHero() {
   const label = state.cloudUser ? (state.cloudProfile?.display_name || state.cloudProfile?.username || state.cloudUser.email || "已登录") : "本地学习";
   const subtitle = state.cloudUser
-    ? state.cloudUser.email || "邮箱账号已连接"
+    ? state.cloudUser.email || "账号已连接"
     : state.cloudConfigured
-      ? "邮箱登录后可发布题库和同步记录"
+      ? "登录后可发布题库和同步记录"
       : "当前为本地模式，题库和练习记录保存在本机";
   const badge = state.cloudUser ? "已登录" : state.cloudConfigured ? "可登录" : "本地";
   return `
@@ -513,7 +516,7 @@ function renderEmailAccountPanel() {
           <div class="setting-row">
             <div>
               <strong>本地模式</strong>
-              <p class="subtle">云端尚未配置。填写 <code>config.js</code> 后可启用邮箱登录、云同步和题库广场。</p>
+              <p class="subtle">云端尚未配置。填写 <code>config.js</code> 后可启用登录、云同步和题库广场。</p>
             </div>
           </div>
         </div>
@@ -523,8 +526,12 @@ function renderEmailAccountPanel() {
   if (!state.cloudUser) {
     return `
       <section class="panel account-section form-grid">
-        <h2>邮箱登录</h2>
-        <p class="subtle">输入邮箱后会发送登录链接。本项目不设置密码，也不会公开展示你的邮箱。</p>
+        <h2>登录</h2>
+        <p class="subtle">使用 GitHub 登录后可发布题库和同步记录。邮箱不会公开展示。</p>
+        <div class="actions account-actions">
+          <button class="button" type="button" data-action="sign-in-provider" data-provider="github">使用 GitHub 登录</button>
+        </div>
+        <p class="subtle">备用方式：输入邮箱后会发送登录链接。本项目不设置密码。</p>
         <div class="field">
           <label for="loginEmail">邮箱</label>
           <input id="loginEmail" type="email" placeholder="you@example.com" />
@@ -994,6 +1001,15 @@ async function sendLoginLink() {
   } catch (error) {
     console.error(error);
     showToast(`发送失败：${error.message || error}`);
+  }
+}
+
+async function signInProvider(provider) {
+  try {
+    cloud.signInWithOAuth(provider);
+  } catch (error) {
+    console.error(error);
+    showToast(`登录失败：${error.message || error}`);
   }
 }
 

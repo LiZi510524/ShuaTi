@@ -2,6 +2,7 @@ import { PRO_CONFIG } from "./config.js";
 
 const SESSION_KEY = "wo-ai-shuati-pro-session";
 const API_VERSION = "2026-06-14";
+const OAUTH_PROVIDERS = new Set(["github", "google"]);
 
 export const cloud = {
   config: normalizeConfig(PRO_CONFIG),
@@ -41,6 +42,10 @@ export const cloud = {
         options: { email_redirect_to: getMagicLinkRedirectUrl(this.config) },
       },
     });
+  },
+  signInWithOAuth(provider) {
+    const url = buildOAuthSignInUrl(this.config, provider);
+    location.href = url;
   },
   async getUser() {
     assertConfigured(this.config);
@@ -202,22 +207,38 @@ export const cloud = {
 };
 
 function normalizeConfig(config) {
+  const appUrl = String(config.appUrl || "");
   return {
     supabaseUrl: String(config.supabaseUrl || "").replace(/\/$/, ""),
     supabaseAnonKey: String(config.supabaseAnonKey || ""),
-    appUrl: String(config.appUrl || "").replace(/\/?$/, "/"),
+    appUrl: appUrl ? appUrl.replace(/\/?$/, "/") : "",
   };
 }
 
 export function getMagicLinkRedirectUrl(config, locationLike = globalThis.location) {
   const currentUrl = getCurrentUrl(locationLike);
+  if (isLocalHost(locationLike?.hostname)) return currentUrl;
   return config.appUrl || currentUrl;
+}
+
+export function buildOAuthSignInUrl(config, provider, locationLike = globalThis.location) {
+  const normalized = normalizeConfig(config);
+  assertConfigured(normalized);
+  if (!OAUTH_PROVIDERS.has(provider)) throw new Error("不支持的登录方式");
+  const url = new URL(`${normalized.supabaseUrl}/auth/v1/authorize`);
+  url.searchParams.set("provider", provider);
+  url.searchParams.set("redirect_to", getMagicLinkRedirectUrl(normalized, locationLike));
+  return url.toString();
 }
 
 function getCurrentUrl(locationLike) {
   if (!locationLike?.origin) return "";
   const pathname = String(locationLike.pathname || "/").replace(/\/index\.html$/, "/");
   return `${locationLike.origin}${pathname}`;
+}
+
+function isLocalHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function loadSession() {
