@@ -33,6 +33,7 @@ const state = {
   discoverLoading: false,
   syncStatus: "",
   editingBankId: "",
+  questionPickerOpen: false,
 };
 
 const view = document.querySelector("#view");
@@ -92,6 +93,7 @@ function bindGlobalEvents() {
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", async () => {
       state.editingBankId = "";
+      state.questionPickerOpen = false;
       state.view = button.dataset.view;
       if (state.view === "practice" && state.currentBankId && state.questions.length === 0) {
         await loadCurrentBank();
@@ -133,8 +135,18 @@ async function handleViewClick(event) {
   if (action === "close-edit-bank") {
     closeBankEditor();
   }
+  if (action === "toggle-question-picker") {
+    toggleQuestionPicker();
+  }
+  if (action === "close-question-picker") {
+    closeQuestionPicker();
+  }
+  if (action === "jump-question") {
+    jumpToQuestion(Number(target.dataset.index));
+  }
   if (action === "set-mode") {
     state.practiceMode = target.dataset.mode;
+    state.questionPickerOpen = false;
     resetPracticeQueue();
     render();
   }
@@ -162,6 +174,7 @@ async function handleViewClick(event) {
   if (action === "practice-wrong") {
     state.view = "practice";
     state.practiceMode = "wrong";
+    state.questionPickerOpen = false;
     startPractice();
   }
   if (action === "master-question") {
@@ -336,7 +349,7 @@ function renderBankCard(bank) {
         <div class="progress-fill" style="width:${progress.rate}%"></div>
       </div>
       <p class="bank-meta">已做 ${progress.done}/${bank.questionCount} · 正确率 ${accuracy}% · 错题 ${progress.wrong}</p>
-      <div class="actions">
+      <div class="actions bank-actions">
         <button class="button" type="button" data-action="select-bank" data-id="${bank.id}">开始刷题</button>
         <button class="ghost-button" type="button" data-action="open-bank" data-id="${bank.id}">设为当前</button>
         <button class="ghost-button" type="button" data-action="publish-bank" data-id="${bank.id}">${bank.cloudId ? "更新发布" : "公开发布"}</button>
@@ -635,7 +648,7 @@ function renderQueueEmpty(savedSession = getValidPracticeSession()) {
 
 function renderQuestionCard(question) {
   const progress = getProgress(question.id);
-  const progressText = `${state.queueIndex + 1} / ${state.queue.length}`;
+  const progressText = `${state.queueIndex + 1}/${state.queue.length}`;
   const percent = state.queue.length ? Math.round(((state.queueIndex + 1) / state.queue.length) * 100) : 0;
   const result = state.lastResult;
   return `
@@ -643,7 +656,10 @@ function renderQuestionCard(question) {
       <div class="question-toolbar">
         <div class="chip-row">
           <span class="type-pill">${typeLabel(question.type)}</span>
-          <span class="type-pill warn">${progressText}</span>
+          <button class="progress-trigger" type="button" data-action="toggle-question-picker" aria-expanded="${state.questionPickerOpen ? "true" : "false"}" aria-haspopup="dialog">
+            <span>${progressText}</span>
+            <span class="progress-caret">${state.questionPickerOpen ? "▴" : "▾"}</span>
+          </button>
         </div>
         <button class="icon-button" type="button" data-action="toggle-favorite" data-question-id="${question.id}" title="收藏">
           ${progress.favorite ? "★" : "☆"}
@@ -658,7 +674,66 @@ function renderQuestionCard(question) {
       </div>
       ${state.submitted && result ? renderResult(question, result) : ""}
     </article>
+    ${renderQuestionPicker()}
   `;
+}
+
+function renderQuestionPicker() {
+  if (!state.questionPickerOpen || !state.queue.length) return "";
+  const groups = groupQueueByType();
+  return `
+    <div class="sheet-backdrop" data-action="close-question-picker"></div>
+    <section class="question-picker-sheet" role="dialog" aria-modal="true" aria-labelledby="questionPickerTitle">
+      <div class="panel question-picker-panel">
+        <div class="bank-head">
+          <div>
+            <h2 id="questionPickerTitle">题目目录</h2>
+            <p class="subtle">按题型快速跳转，当前题会高亮显示。</p>
+          </div>
+          <button class="icon-button" type="button" data-action="close-question-picker" aria-label="关闭">×</button>
+        </div>
+        <div class="question-picker-groups">
+          ${groups.map((group) => `
+            <section class="question-picker-group">
+              <div class="question-picker-head">
+                <strong>${escapeHtml(typeLabel(group.type))}</strong>
+                <span class="subtle">${group.items.length} 题</span>
+              </div>
+              <div class="question-picker-grid">
+                ${group.items.map(({ question, index }) => renderQuestionJumpButton(question, index)).join("")}
+              </div>
+            </section>
+          `).join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderQuestionJumpButton(question, index) {
+  const progress = getProgress(question.id);
+  const className = [
+    "question-jump-button",
+    index === state.queueIndex ? "is-current" : "",
+    progress.answered ? (progress.correct ? "is-done" : "is-wrong") : "",
+  ].filter(Boolean).join(" ");
+  return `
+    <button class="${className}" type="button" data-action="jump-question" data-index="${index}">
+      ${question.order}
+    </button>
+  `;
+}
+
+function groupQueueByType() {
+  const groups = new Map();
+  state.queue.forEach((question, index) => {
+    const key = question.type;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ question, index });
+  });
+  return ["single", "multiple", "judge", "fill"]
+    .filter((type) => groups.has(type))
+    .map((type) => ({ type, items: groups.get(type) }));
 }
 
 function renderOption(question, option) {
@@ -1109,6 +1184,7 @@ function startPractice() {
   state.selected = new Set();
   state.submitted = false;
   state.lastResult = null;
+  state.questionPickerOpen = false;
   if (!state.queue.length) {
     showToast("当前模式暂无题目");
   } else {
@@ -1130,6 +1206,7 @@ function resumePractice() {
   state.selected = new Set(session.selected || []);
   state.submitted = Boolean(session.submitted);
   state.lastResult = session.lastResult || null;
+  state.questionPickerOpen = false;
   persistPracticeSession();
   render();
 }
@@ -1149,6 +1226,7 @@ function resetPracticeQueue() {
   state.selected = new Set();
   state.submitted = false;
   state.lastResult = null;
+  state.questionPickerOpen = false;
 }
 
 function chooseOption(value) {
@@ -1215,6 +1293,7 @@ function nextQuestion() {
   state.selected = new Set();
   state.submitted = false;
   state.lastResult = null;
+  state.questionPickerOpen = false;
   persistPracticeSession();
   render();
 }
@@ -1328,6 +1407,7 @@ async function markMastered(questionId) {
 
 async function selectBank(id, nextView) {
   state.editingBankId = "";
+  state.questionPickerOpen = false;
   setCurrentBank(id, true);
   await loadCurrentBank();
   resetPracticeQueue();
@@ -1338,6 +1418,29 @@ async function selectBank(id, nextView) {
 function setCurrentBank(id, persist) {
   state.currentBankId = id;
   if (persist) localStorage.setItem(CURRENT_BANK_KEY, id);
+}
+
+function toggleQuestionPicker() {
+  if (!state.queue.length) return;
+  state.questionPickerOpen = !state.questionPickerOpen;
+  render();
+}
+
+function closeQuestionPicker() {
+  if (!state.questionPickerOpen) return;
+  state.questionPickerOpen = false;
+  render();
+}
+
+function jumpToQuestion(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= state.queue.length) return;
+  state.queueIndex = index;
+  state.selected = new Set();
+  state.submitted = false;
+  state.lastResult = null;
+  state.questionPickerOpen = false;
+  persistPracticeSession();
+  render();
 }
 
 async function editBank(id) {

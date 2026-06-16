@@ -297,6 +297,14 @@ h3 {
   transition: transform 0.16s ease, background 0.16s ease, border-color 0.16s ease;
 }
 
+.button,
+.ghost-button,
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .button:active,
 .ghost-button:active,
 .danger-button:active,
@@ -346,6 +354,16 @@ h3 {
   display: grid;
   gap: 10px;
   padding: 12px;
+}
+
+.bank-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bank-actions > button {
+  width: 100%;
 }
 
 .bank-library-panel,
@@ -529,6 +547,27 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.progress-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.progress-caret {
+  font-size: 10px;
+  line-height: 1;
 }
 
 .stem {
@@ -635,6 +674,85 @@ h3 {
   line-height: 1.55;
 }
 
+.question-picker-sheet {
+  position: fixed;
+  left: 50%;
+  right: 12px;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  z-index: 31;
+  width: min(920px, calc(100% - 24px));
+  transform: translateX(-50%);
+}
+
+.question-picker-panel {
+  display: grid;
+  gap: 12px;
+  max-height: min(72vh, 620px);
+  padding: 14px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.question-picker-groups {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.question-picker-group {
+  display: grid;
+  gap: 8px;
+}
+
+.question-picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.question-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+  gap: 8px;
+}
+
+.question-jump-button {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.question-jump-button.is-current {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
+.question-jump-button.is-done {
+  border-color: rgba(22, 163, 74, 0.26);
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.question-jump-button.is-wrong {
+  border-color: rgba(220, 38, 38, 0.26);
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.question-jump-button.is-current.is-done,
+.question-jump-button.is-current.is-wrong {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+}
+
 .tabbar {
   position: fixed;
   left: 50%;
@@ -730,6 +848,15 @@ h3 {
   }
 
   .edit-sheet {
+    right: auto;
+    bottom: 26px;
+  }
+
+  .bank-actions {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .question-picker-sheet {
     right: auto;
     bottom: 26px;
   }
