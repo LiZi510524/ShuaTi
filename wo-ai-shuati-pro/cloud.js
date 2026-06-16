@@ -38,7 +38,7 @@ export const cloud = {
       body: {
         email,
         create_user: true,
-        options: { email_redirect_to: redirectUrl(this.config) },
+        options: { email_redirect_to: getMagicLinkRedirectUrl(this.config) },
       },
     });
   },
@@ -209,8 +209,15 @@ function normalizeConfig(config) {
   };
 }
 
-function redirectUrl(config) {
-  return config.appUrl || `${location.origin}${location.pathname}`;
+export function getMagicLinkRedirectUrl(config, locationLike = globalThis.location) {
+  const currentUrl = getCurrentUrl(locationLike);
+  return config.appUrl || currentUrl;
+}
+
+function getCurrentUrl(locationLike) {
+  if (!locationLike?.origin) return "";
+  const pathname = String(locationLike.pathname || "/").replace(/\/index\.html$/, "/");
+  return `${locationLike.origin}${pathname}`;
 }
 
 function loadSession() {
