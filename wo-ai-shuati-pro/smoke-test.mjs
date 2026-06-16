@@ -24,7 +24,7 @@ const optionCount = await page.locator(".option-button").count();
 await page.click(".tab-button[data-view='discover']");
 await page.waitForSelector("text=发现题库", { timeout: 5000 });
 await page.click(".tab-button[data-view='account']");
-await page.waitForSelector("text=账号", { timeout: 5000 });
+await page.waitForSelector("text=邮箱登录", { timeout: 5000 });
 const screenshotPath = path.resolve("wo-ai-shuati-pro", "smoke-pro.png");
 await page.screenshot({ path: screenshotPath, fullPage: true });
 await browser.close();
