@@ -259,16 +259,9 @@ function render() {
 function renderBanks() {
   const banks = getFilteredBanks();
   const totalQuestions = state.banks.reduce((sum, bank) => sum + bank.questionCount, 0);
-  const totalDone = state.allProgress.filter((item) => item.answered).length;
   const totalWrong = state.allProgress.filter((item) => item.wrongCount > 0).length;
 
   view.innerHTML = `
-    <section class="metric-row">
-      <div class="metric"><strong>${state.banks.length}</strong><span>题库</span></div>
-      <div class="metric"><strong>${totalQuestions}</strong><span>总题数</span></div>
-      <div class="metric"><strong>${totalWrong}</strong><span>错题</span></div>
-    </section>
-
     <section class="desktop-columns">
       <form id="importForm" class="panel form-grid" autocomplete="off">
         <h2>导入题库</h2>
@@ -297,9 +290,13 @@ function renderBanks() {
         <div class="bank-head">
           <div>
             <h2>我的题库</h2>
-            <p class="subtle">已做 ${totalDone} 题 · ${state.cloudConfigured ? "Pro 云端可用" : "未配置云端，当前为本地模式"}</p>
           </div>
         </div>
+        <section class="metric-row bank-library-metrics">
+          <div class="metric"><strong>${state.banks.length}</strong><span>题库</span></div>
+          <div class="metric"><strong>${totalQuestions}</strong><span>总题数</span></div>
+          <div class="metric"><strong>${totalWrong}</strong><span>错题</span></div>
+        </section>
         <div class="field">
           <label for="bankSearch">搜索题库/标签</label>
           <input id="bankSearch" type="search" value="${escapeAttr(state.bankFilter)}" placeholder="输入课程、章节或标签" />

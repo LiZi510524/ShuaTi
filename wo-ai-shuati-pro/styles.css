@@ -372,6 +372,10 @@ h3 {
   gap: 10px;
 }
 
+.bank-library-metrics {
+  margin-top: 2px;
+}
+
 .bank-head {
   display: flex;
   align-items: flex-start;
@@ -678,6 +682,7 @@ h3 {
   position: fixed;
   left: 50%;
   right: 12px;
+  top: calc(18px + env(safe-area-inset-top));
   bottom: calc(74px + env(safe-area-inset-bottom));
   z-index: 31;
   width: min(920px, calc(100% - 24px));
@@ -686,17 +691,24 @@ h3 {
 
 .question-picker-panel {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
-  max-height: min(72vh, 620px);
+  height: 100%;
   padding: 14px;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
 }
 
 .question-picker-groups {
   display: grid;
   gap: 12px;
-  overflow: auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 2px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 
 .question-picker-group {
@@ -713,19 +725,25 @@ h3 {
 
 .question-picker-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 7px;
 }
 
 .question-jump-button {
-  min-height: 42px;
+  min-height: 36px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 9px;
   background: #fff;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+}
+
+.question-picker-panel .icon-button {
+  width: 38px;
+  min-height: 38px;
+  font-size: 16px;
 }
 
 .question-jump-button.is-current {
@@ -859,5 +877,6 @@ h3 {
   .question-picker-sheet {
     right: auto;
     bottom: 26px;
+    top: 26px;
   }
 }
