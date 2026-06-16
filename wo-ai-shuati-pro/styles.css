@@ -361,10 +361,49 @@ h3 {
   gap: 10px;
 }
 
+.bank-card-head {
+  align-items: center;
+}
+
+.bank-title-wrap {
+  min-width: 0;
+}
+
 .bank-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin: 0 0 4px;
   font-size: 16px;
   line-height: 1.25;
+}
+
+.bank-course {
+  font-weight: 800;
+}
+
+.bank-chapter {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #f3f6fb;
+  color: #5b6474;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.bank-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.edit-inline-button {
+  min-width: 64px;
 }
 
 .bank-meta,
@@ -381,6 +420,36 @@ h3 {
 
 .discover-actions {
   margin-top: -2px;
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.edit-sheet {
+  position: fixed;
+  left: 50%;
+  right: 12px;
+  bottom: calc(74px + env(safe-area-inset-bottom));
+  z-index: 31;
+  width: min(920px, calc(100% - 24px));
+  transform: translateX(-50%);
+}
+
+.edit-sheet .panel {
+  padding: 14px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.form-grid.three {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.edit-sheet-actions {
+  justify-content: flex-end;
 }
 
 .tag-row,
@@ -654,5 +723,14 @@ h3 {
 
   .form-grid.two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .form-grid.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .edit-sheet {
+    right: auto;
+    bottom: 26px;
   }
 }

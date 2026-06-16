@@ -32,6 +32,7 @@ const state = {
   discoverProfile: null,
   discoverLoading: false,
   syncStatus: "",
+  editingBankId: "",
 };
 
 const view = document.querySelector("#view");
@@ -90,6 +91,7 @@ async function initCloud() {
 function bindGlobalEvents() {
   document.querySelectorAll(".tab-button").forEach((button) => {
     button.addEventListener("click", async () => {
+      state.editingBankId = "";
       state.view = button.dataset.view;
       if (state.view === "practice" && state.currentBankId && state.questions.length === 0) {
         await loadCurrentBank();
@@ -126,7 +128,10 @@ async function handleViewClick(event) {
     await copyText(id);
   }
   if (action === "edit-bank") {
-    await editBank(id);
+    openBankEditor(id);
+  }
+  if (action === "close-edit-bank") {
+    closeBankEditor();
   }
   if (action === "set-mode") {
     state.practiceMode = target.dataset.mode;
@@ -196,6 +201,10 @@ async function handleViewSubmit(event) {
     event.preventDefault();
     await importQuestionBank(new FormData(event.target));
   }
+  if (event.target.matches("#bankEditForm")) {
+    event.preventDefault();
+    await saveBankEdit(new FormData(event.target));
+  }
 }
 
 async function handleViewChange(event) {
@@ -256,8 +265,8 @@ function renderBanks() {
             <input id="courseName" name="course" type="text" placeholder="毛概" required />
           </div>
           <div class="field">
-            <label for="chapterName">章节/范围</label>
-            <input id="chapterName" name="chapter" type="text" placeholder="导论 / 第一章" />
+            <label for="chapterName">章节</label>
+            <input id="chapterName" name="chapter" type="text" placeholder="导论" />
           </div>
         </div>
         <div class="field">
@@ -285,6 +294,7 @@ function renderBanks() {
         <div class="bank-list" data-bank-list>${renderBankListContent(banks)}</div>
       </section>
     </section>
+    ${renderBankEditSheet()}
   `;
 }
 
@@ -304,16 +314,22 @@ function renderBankCard(bank) {
   const progress = getBankProgress(bank.id);
   const accuracy = progress.done ? Math.round((progress.correct / progress.done) * 100) : 0;
   const tags = [...(bank.tags || [])].filter(Boolean);
-  const title = getBankTitle(bank);
+  const course = getBankTitle(bank);
   const chapter = cleanText(bank.chapter);
   return `
     <article class="bank-card">
-      <div class="bank-head">
-        <div>
-          <h3 class="bank-title">${escapeHtml(title)}</h3>
-          <p class="bank-meta">${chapter ? `${escapeHtml(chapter)} · ` : ""}${bank.questionCount} 题 · 单选 ${bank.counts.single || 0} · 多选 ${bank.counts.multiple || 0} · 判断 ${bank.counts.judge || 0}</p>
+      <div class="bank-head bank-card-head">
+        <div class="bank-title-wrap">
+          <h3 class="bank-title">
+            <span class="bank-course">${escapeHtml(course)}</span>
+            ${chapter ? `<span class="bank-chapter">${escapeHtml(chapter)}</span>` : ""}
+          </h3>
+          <p class="bank-meta">${bank.questionCount} 题 · 单选 ${bank.counts.single || 0} · 多选 ${bank.counts.multiple || 0} · 判断 ${bank.counts.judge || 0}</p>
         </div>
-        ${bank.id === state.currentBankId ? `<span class="type-pill good">当前</span>` : ""}
+        <div class="bank-head-actions">
+          ${bank.id === state.currentBankId ? `<span class="type-pill good">当前</span>` : ""}
+          <button class="ghost-button edit-inline-button" type="button" data-action="edit-bank" data-id="${bank.id}">编辑</button>
+        </div>
       </div>
       ${tags.length ? `<div class="tag-row">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
       <div class="progress-track" aria-label="完成进度">
@@ -325,10 +341,48 @@ function renderBankCard(bank) {
         <button class="ghost-button" type="button" data-action="open-bank" data-id="${bank.id}">设为当前</button>
         <button class="ghost-button" type="button" data-action="publish-bank" data-id="${bank.id}">${bank.cloudId ? "更新发布" : "公开发布"}</button>
         ${bank.cloudId ? `<button class="ghost-button" type="button" data-action="copy-bank-id" data-id="${bank.cloudId}">复制ID</button>` : ""}
-        <button class="ghost-button" type="button" data-action="edit-bank" data-id="${bank.id}">编辑</button>
         <button class="danger-button" type="button" data-action="delete-bank" data-id="${bank.id}">删除</button>
       </div>
     </article>
+  `;
+}
+
+function renderBankEditSheet() {
+  if (!state.editingBankId) return "";
+  const bank = state.banks.find((item) => item.id === state.editingBankId);
+  if (!bank) return "";
+  return `
+    <div class="sheet-backdrop" data-action="close-edit-bank"></div>
+    <section class="edit-sheet" role="dialog" aria-modal="true" aria-labelledby="bankEditTitle">
+      <form id="bankEditForm" class="panel form-grid" autocomplete="off">
+        <div class="bank-head">
+          <div>
+            <h2 id="bankEditTitle">编辑题库</h2>
+            <p class="subtle">课程、章节和标签会一起保存。</p>
+          </div>
+          <button class="icon-button" type="button" data-action="close-edit-bank" aria-label="关闭">×</button>
+        </div>
+        <input type="hidden" name="id" value="${escapeAttr(bank.id)}" />
+        <div class="form-grid three">
+          <div class="field">
+            <label for="editCourseName">课程</label>
+            <input id="editCourseName" name="course" type="text" value="${escapeAttr(bank.course || getBankTitle(bank))}" required />
+          </div>
+          <div class="field">
+            <label for="editChapterName">章节</label>
+            <input id="editChapterName" name="chapter" type="text" value="${escapeAttr(bank.chapter || "")}" />
+          </div>
+          <div class="field">
+            <label for="editBankTags">标签</label>
+            <input id="editBankTags" name="tags" type="text" value="${escapeAttr((bank.tags || []).join(", "))}" />
+          </div>
+        </div>
+        <div class="actions edit-sheet-actions">
+          <button class="ghost-button" type="button" data-action="close-edit-bank">取消</button>
+          <button class="button" type="submit">保存</button>
+        </div>
+      </form>
+    </section>
   `;
 }
 
@@ -1273,6 +1327,7 @@ async function markMastered(questionId) {
 }
 
 async function selectBank(id, nextView) {
+  state.editingBankId = "";
   setCurrentBank(id, true);
   await loadCurrentBank();
   resetPracticeQueue();
@@ -1286,22 +1341,43 @@ function setCurrentBank(id, persist) {
 }
 
 async function editBank(id) {
+  openBankEditor(id);
+}
+
+function openBankEditor(id) {
   const bank = state.banks.find((item) => item.id === id);
   if (!bank) return;
-  const course = prompt("课程", bank.course || getBankTitle(bank)) ?? bank.course;
-  const chapter = prompt("章节/范围", bank.chapter || "") ?? bank.chapter;
-  const tagsText = prompt("标签，用逗号分隔", (bank.tags || []).join(", ")) ?? (bank.tags || []).join(", ");
-  const cleanCourse = cleanText(course);
-  const cleanChapter = cleanText(chapter);
+  state.editingBankId = id;
+  render();
+}
+
+function closeBankEditor() {
+  if (!state.editingBankId) return;
+  state.editingBankId = "";
+  render();
+}
+
+async function saveBankEdit(formData) {
+  const id = cleanText(formData.get("id"));
+  const bank = state.banks.find((item) => item.id === id);
+  if (!bank) return;
+  const course = cleanText(formData.get("course"));
+  const chapter = cleanText(formData.get("chapter"));
+  const tags = splitTags(formData.get("tags"));
+  if (!course) {
+    showToast("课程不能为空");
+    return;
+  }
   const updated = {
     ...bank,
-    name: buildBankName(cleanCourse, cleanChapter, bank.name),
-    course: cleanCourse,
-    chapter: cleanChapter,
-    tags: splitTags(tagsText),
+    name: buildBankName(course, chapter, bank.name),
+    course,
+    chapter,
+    tags,
     updatedAt: new Date().toISOString(),
   };
   await putRecord(STORE_BANKS, updated);
+  state.editingBankId = "";
   await refreshBanks();
   render();
 }
@@ -1317,6 +1393,9 @@ async function deleteBank(id) {
     localStorage.removeItem(CURRENT_BANK_KEY);
     state.questions = [];
     state.progress = new Map();
+  }
+  if (state.editingBankId === id) {
+    state.editingBankId = "";
   }
   await refreshBanks();
   if (!state.currentBankId && state.banks[0]) {
