@@ -20,7 +20,7 @@ test("builds a Supabase GitHub OAuth authorize URL with the configured productio
   );
 });
 
-test("uses the current local page as the OAuth redirect during local development", () => {
+test("uses the configured final app URL as the OAuth redirect during local development", () => {
   const url = buildOAuthSignInUrl({
     supabaseUrl: "https://example.supabase.co/",
     supabaseAnonKey: "anon",
@@ -33,7 +33,7 @@ test("uses the current local page as the OAuth redirect during local development
 
   assert.equal(
     url,
-    "https://example.supabase.co/auth/v1/authorize?provider=github&redirect_to=http%3A%2F%2F127.0.0.1%3A4181%2F",
+    "https://example.supabase.co/auth/v1/authorize?provider=github&redirect_to=https%3A%2F%2Fsite.example%2Fapp%2F",
   );
 });
 

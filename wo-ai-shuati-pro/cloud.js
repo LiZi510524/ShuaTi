@@ -217,7 +217,6 @@ function normalizeConfig(config) {
 
 export function getMagicLinkRedirectUrl(config, locationLike = globalThis.location) {
   const currentUrl = getCurrentUrl(locationLike);
-  if (isLocalHost(locationLike?.hostname)) return currentUrl;
   return config.appUrl || currentUrl;
 }
 
@@ -235,10 +234,6 @@ function getCurrentUrl(locationLike) {
   if (!locationLike?.origin) return "";
   const pathname = String(locationLike.pathname || "/").replace(/\/index\.html$/, "/");
   return `${locationLike.origin}${pathname}`;
-}
-
-function isLocalHost(hostname) {
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
 function loadSession() {

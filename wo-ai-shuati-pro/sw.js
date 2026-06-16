@@ -1,11 +1,10 @@
-const CACHE_NAME = "wo-ai-shuati-pro-v10";
+const CACHE_NAME = "wo-ai-shuati-pro-v11";
 const CORE_ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./cloud.js",
-  "./config.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
@@ -27,8 +26,9 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  if (event.request.url.endsWith("/config.js")) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  const url = new URL(event.request.url);
+  if (url.pathname.endsWith("/config.js")) {
+    event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
   event.respondWith(
