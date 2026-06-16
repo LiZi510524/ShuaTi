@@ -4,7 +4,7 @@ export function isProfileComplete(profile) {
 
 export function getPublishBlocker({ cloudConfigured, cloudUser, cloudProfile }) {
   if (!cloudConfigured) return "请先配置 Supabase";
-  if (!cloudUser) return "请先用邮箱登录";
+  if (!cloudUser) return "请先登录";
   if (!isProfileComplete(cloudProfile)) return "请先设置公开用户名和昵称";
   return "";
 }
