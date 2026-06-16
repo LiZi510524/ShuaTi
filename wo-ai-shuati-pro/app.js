@@ -482,6 +482,7 @@ function renderAccount() {
       </section>
     ` : ""}
     ${renderSettingsContent()}
+    ${renderContributors()}
   `;
 }
 
@@ -559,6 +560,19 @@ function renderEmailAccountPanel() {
           </div>
           <button class="danger-button" type="button" data-action="sign-out">退出登录</button>
         </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderContributors() {
+  return `
+    <section class="panel account-section">
+      <h2>贡献者</h2>
+      <p class="subtle">感谢参与项目建设与维护。</p>
+      <div class="actions account-actions">
+        <a class="ghost-button" href="https://github.com/LiZi510524" target="_blank" rel="noopener noreferrer">LiZi510524</a>
+        <a class="ghost-button" href="https://github.com/kqrekybjinn" target="_blank" rel="noopener noreferrer">kqrekybjinn</a>
       </div>
     </section>
   `;
