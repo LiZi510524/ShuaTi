@@ -228,6 +228,52 @@ h3 {
   font-size: 14px;
 }
 
+.authors-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.authors-label {
+  font-weight: 700;
+}
+
+.authors-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.author-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.author-link:hover {
+  color: var(--primary);
+}
+
+.author-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e2e8f0;
+}
+
+.authors-separator {
+  color: var(--muted);
+}
+
 .form-grid {
   display: grid;
   gap: 10px;
