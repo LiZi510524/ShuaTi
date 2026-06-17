@@ -1,5 +1,13 @@
 import { cloud, CLOUD_API_VERSION } from "./cloud.js";
-import { findSavedPublicBank, getPublishBlocker, isProfileComplete, mapPublicBankToLocal } from "./public-bank-domain.js";
+import {
+  findSavedPublicBank,
+  getPublishBlocker,
+  isProfileComplete,
+  mapCloudBankToLocal,
+  mapCloudProgressToLocal,
+  mapPublicBankToLocal,
+  mergeProgressRows,
+} from "./public-bank-domain.js";
 
 const DB_NAME = "wo-ai-shuati-pro-db";
 const DB_VERSION = 1;
@@ -208,7 +216,7 @@ async function handleViewClick(event) {
     await openOwnerProfile(target.dataset.username);
   }
   if (action === "sync-progress") {
-    await syncProgress();
+    await syncCloudData();
   }
 }
 
@@ -467,22 +475,29 @@ function renderAccount() {
     ${renderAccountHero()}
     ${renderEmailAccountPanel()}
     ${renderProfileForm()}
-    ${bank ? `
-      <section class="panel account-section">
-        <h2>当前题库统计</h2>
-        <p class="subtle">${escapeHtml(getBankTitle(bank))}</p>
+    ${renderCloudSyncPanel(bank, summary)}
+    ${renderSettingsContent()}
+    ${renderContributors()}
+  `;
+}
+
+function renderCloudSyncPanel(bank, summary) {
+  if (!state.cloudConfigured) return "";
+  return `
+    <section class="panel account-section">
+      <h2>云同步</h2>
+      <p class="subtle">${bank ? escapeHtml(getBankTitle(bank)) : "从云端拉取这个账号的题库，也会上传本机题库和练习记录。"}</p>
+      ${bank ? `
         <div class="metric-row">
           <div class="metric"><strong>${summary.done}</strong><span>已做</span></div>
           <div class="metric"><strong>${summary.accuracy}%</strong><span>正确率</span></div>
           <div class="metric"><strong>${summary.wrong}</strong><span>错题</span></div>
         </div>
-        <div class="actions" style="margin-top:12px;">
-          <button class="ghost-button" type="button" data-action="sync-progress" ${state.cloudUser ? "" : "disabled"}>同步练习记录</button>
-        </div>
-      </section>
-    ` : ""}
-    ${renderSettingsContent()}
-    ${renderContributors()}
+      ` : ""}
+      <div class="actions" style="margin-top:12px;">
+        <button class="ghost-button" type="button" data-action="sync-progress" ${state.cloudUser ? "" : "disabled"}>同步题库与记录</button>
+      </div>
+    </section>
   `;
 }
 
@@ -995,6 +1010,10 @@ async function publishLocalBank(bankId) {
     if (!confirm(message)) return;
     showToast("正在发布题库...");
     const cloudId = await cloud.publishBank(bank, questions.sort((a, b) => a.order - b.order), state.cloudProfile, "public");
+    await putMany(STORE_QUESTIONS, questions.map((question) => ({
+      ...question,
+      cloudQuestionId: `${cloudId}_${question.order}`,
+    })));
     const updated = {
       ...bank,
       cloudId,
@@ -1129,6 +1148,9 @@ async function usePublicBank(bankId) {
       countQuestionTypes,
     });
     await saveBankWithQuestions(localBank, localQuestions);
+    if (state.cloudUser) {
+      await cloud.savePublicBank(payload.bank.id, localBankId);
+    }
     state.currentBankId = localBankId;
     localStorage.setItem(CURRENT_BANK_KEY, localBankId);
     await refreshBanks();
@@ -1143,25 +1165,139 @@ async function usePublicBank(bankId) {
   }
 }
 
-async function syncProgress() {
+async function syncCloudData() {
   try {
     if (!state.cloudUser) throw new Error("请先登录");
-    const bank = getCurrentBank();
-    if (!bank?.cloudId) throw new Error("当前题库还没有云端 ID，请先发布或保存公开题库");
-    const translated = [...state.progress.values()].map((item) => {
-      const question = state.questions.find((q) => q.id === item.questionId);
-      return {
-        ...item,
-        bankId: bank.cloudId,
-        questionId: question?.cloudQuestionId || `${bank.cloudId}_${question?.order || item.questionId}`,
-      };
-    });
-    await cloud.pushProgress(translated);
-    showToast(`已同步 ${translated.length} 条记录`);
+    showToast("正在同步题库与记录...");
+    const result = {
+      uploadedBanks: 0,
+      savedBanks: 0,
+      progressRows: 0,
+      downloadedBanks: 0,
+    };
+
+    for (const bank of [...state.banks]) {
+      const synced = await syncOneBank(bank);
+      result.uploadedBanks += synced.uploadedBank ? 1 : 0;
+      result.savedBanks += synced.savedBank ? 1 : 0;
+      result.progressRows += synced.progressRows;
+    }
+
+    result.downloadedBanks = await pullMissingCloudBanks();
+    await refreshBanks();
+    if (state.currentBankId) await loadCurrentBank();
+    resetPracticeQueue();
+    render();
+    showToast(`已同步：上传 ${result.uploadedBanks} 个，下载 ${result.downloadedBanks} 个，保存关系 ${result.savedBanks} 个，记录 ${result.progressRows} 条`);
   } catch (error) {
     console.error(error);
     showToast(`同步失败：${error.message || error}`);
   }
+}
+
+async function pullMissingCloudBanks() {
+  const knownCloudIds = new Set((await getAll(STORE_BANKS)).map((bank) => bank.cloudId).filter(Boolean));
+  let downloaded = 0;
+  const ownedBanks = await cloud.listMyCloudBanks();
+  for (const bank of ownedBanks || []) {
+    if (knownCloudIds.has(bank.id)) continue;
+    const payload = await cloud.getBank(bank.id);
+    if (payload) {
+      await saveCloudBankPayload(payload, createId("bank"), payload.bank.visibility || "private");
+      knownCloudIds.add(bank.id);
+      downloaded += 1;
+    }
+  }
+
+  const savedRelations = await cloud.listMySavedBankRelations();
+  for (const relation of savedRelations || []) {
+    if (knownCloudIds.has(relation.bank_id)) continue;
+    const payload = await cloud.getPublicBank(relation.bank_id);
+    if (payload) {
+      await saveCloudBankPayload(payload, relation.local_bank_id || createId("bank"), "saved-public");
+      knownCloudIds.add(relation.bank_id);
+      downloaded += 1;
+    }
+  }
+  return downloaded;
+}
+
+async function saveCloudBankPayload(payload, localBankId, visibility) {
+  const now = new Date().toISOString();
+  const { localBank, localQuestions } = mapCloudBankToLocal({
+    payload,
+    localBankId,
+    now,
+    createQuestionId: () => createId("q"),
+    buildBankName,
+    countQuestionTypes,
+    visibility,
+  });
+  await saveBankWithQuestions(localBank, localQuestions);
+  const cloudRows = await cloud.getProgress(payload.bank.id);
+  const mappedCloudRows = mapCloudProgressToLocal({ cloudRows: cloudRows || [], questions: localQuestions });
+  if (mappedCloudRows.length) await putMany(STORE_PROGRESS, mappedCloudRows);
+}
+
+async function syncOneBank(bank) {
+  const result = { uploadedBank: false, savedBank: false, progressRows: 0 };
+  let localBank = bank;
+  let questions = (await getByIndex(STORE_QUESTIONS, "bankId", localBank.id)).sort((a, b) => a.order - b.order);
+
+  if (localBank.visibility === "saved-public") {
+    if (!localBank.cloudId) return result;
+    await cloud.savePublicBank(localBank.cloudId, localBank.id);
+    result.savedBank = true;
+  } else if (questions.length) {
+    if (!isProfileComplete(state.cloudProfile)) throw new Error("请先设置公开用户名和昵称");
+    const visibility = localBank.visibility === "public" ? "public" : "private";
+    const cloudId = await cloud.publishBank(localBank, questions, state.cloudProfile, visibility);
+    questions = questions.map((question) => ({
+      ...question,
+      cloudQuestionId: `${cloudId}_${question.order}`,
+    }));
+    await putMany(STORE_QUESTIONS, questions);
+    localBank = {
+      ...localBank,
+      cloudId,
+      visibility,
+      ownerUsername: state.cloudProfile.username,
+      updatedAt: new Date().toISOString(),
+    };
+    await putRecord(STORE_BANKS, localBank);
+    result.uploadedBank = true;
+  }
+
+  if (!localBank.cloudId) return result;
+  const localRows = await getByIndex(STORE_PROGRESS, "bankId", localBank.id);
+  const cloudRows = await cloud.getProgress(localBank.cloudId);
+  const mappedCloudRows = mapCloudProgressToLocal({ cloudRows: cloudRows || [], questions });
+  const mergedRows = mergeProgressRows({ localRows, cloudRows: mappedCloudRows });
+  if (mergedRows.length) {
+    await putMany(STORE_PROGRESS, mergedRows);
+    const translated = mapLocalProgressToCloud({
+      progressRows: mergedRows,
+      questions,
+      cloudBankId: localBank.cloudId,
+    });
+    await cloud.pushProgress(translated);
+  }
+  result.progressRows = mergedRows.length;
+  return result;
+}
+
+function mapLocalProgressToCloud({ progressRows, questions, cloudBankId }) {
+  const byLocalQuestionId = new Map(questions.map((question) => [question.id, question]));
+  return progressRows.flatMap((item) => {
+    const question = byLocalQuestionId.get(item.questionId);
+    const cloudQuestionId = question?.cloudQuestionId || (question ? `${cloudBankId}_${question.order}` : "");
+    if (!cloudQuestionId) return [];
+    return [{
+      ...item,
+      bankId: cloudBankId,
+      questionId: cloudQuestionId,
+    }];
+  });
 }
 
 function normalizeRows(rows) {

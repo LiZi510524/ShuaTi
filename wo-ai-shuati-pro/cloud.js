@@ -1,7 +1,7 @@
 import { PRO_CONFIG } from "./config.js";
 
 const SESSION_KEY = "wo-ai-shuati-pro-session";
-const API_VERSION = "2026-06-14";
+const API_VERSION = "2026-06-16";
 const OAUTH_PROVIDERS = new Set(["github", "google"]);
 
 export const cloud = {
@@ -180,6 +180,65 @@ export const cloud = {
     return restFetch(this.config, `/question_banks?owner_username=eq.${encodeURIComponent(username)}&visibility=eq.public&select=*&order=updated_at.desc`, {
       method: "GET",
       token: this.session?.access_token,
+    });
+  },
+  async listMyCloudBanks() {
+    assertConfigured(this.config);
+    const session = requireSession();
+    const user = await this.getUser();
+    return restFetch(this.config, `/question_banks?owner_id=eq.${encodeURIComponent(user.id)}&select=*&order=updated_at.desc`, {
+      method: "GET",
+      token: session.access_token,
+    });
+  },
+  async listMySavedBankRelations() {
+    assertConfigured(this.config);
+    const session = requireSession();
+    return restFetch(this.config, "/user_bank_saves?select=*&order=updated_at.desc", {
+      method: "GET",
+      token: session.access_token,
+    });
+  },
+  async getBank(bankId) {
+    assertConfigured(this.config);
+    const session = requireSession();
+    const banks = await restFetch(this.config, `/question_banks?id=eq.${encodeURIComponent(bankId)}&select=*`, {
+      method: "GET",
+      token: session.access_token,
+    });
+    const bank = banks?.[0];
+    if (!bank) return null;
+    const questions = await restFetch(this.config, `/questions?bank_id=eq.${encodeURIComponent(bankId)}&select=*&order=order_no.asc`, {
+      method: "GET",
+      token: session.access_token,
+    });
+    return { bank, questions };
+  },
+  async savePublicBank(bankId, localBankId) {
+    assertConfigured(this.config);
+    const session = requireSession();
+    const user = await this.getUser();
+    const now = new Date().toISOString();
+    await restFetch(this.config, "/user_bank_saves?on_conflict=id", {
+      method: "POST",
+      token: session.access_token,
+      prefer: "resolution=merge-duplicates,return=minimal",
+      body: [{
+        id: `${user.id}_${bankId}`,
+        user_id: user.id,
+        bank_id: bankId,
+        local_bank_id: localBankId,
+        saved_at: now,
+        updated_at: now,
+      }],
+    });
+  },
+  async getProgress(bankId) {
+    assertConfigured(this.config);
+    const session = requireSession();
+    return restFetch(this.config, `/question_progress?bank_id=eq.${encodeURIComponent(bankId)}&select=*`, {
+      method: "GET",
+      token: session.access_token,
     });
   },
   async pushProgress(progressRows) {
