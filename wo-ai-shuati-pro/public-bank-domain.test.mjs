@@ -76,6 +76,77 @@ test("cloud progress maps back to the local question id before merging", () => {
   }]);
 });
 
+test("cloud progress falls back to cloud bank id and order for older local questions", () => {
+  const mapped = mapCloudProgressToLocal({
+    cloudBankId: "cloud_bank",
+    cloudRows: [{
+      question_id: "cloud_bank_2",
+      bank_id: "cloud_bank",
+      selected_answer: "B",
+      answered: true,
+      correct: false,
+      attempts: 1,
+      wrong_count: 1,
+      favorite: false,
+      mastered: false,
+      last_answered_at: "2026-06-17T12:00:00.000Z",
+      updated_at: "2026-06-17T12:00:01.000Z",
+    }],
+    questions: [{
+      id: "local_q_2",
+      bankId: "local_bank",
+      order: 2,
+    }],
+  });
+
+  assert.deepEqual(mapped, [{
+    id: "local_q_2",
+    questionId: "local_q_2",
+    bankId: "local_bank",
+    selectedAnswer: "B",
+    answered: true,
+    correct: false,
+    attempts: 1,
+    wrongCount: 1,
+    favorite: false,
+    mastered: false,
+    lastAnsweredAt: "2026-06-17T12:00:00.000Z",
+    cloudUpdatedAt: "2026-06-17T12:00:01.000Z",
+  }]);
+});
+
+test("explicit cloud question ids win over order fallback aliases", () => {
+  const mapped = mapCloudProgressToLocal({
+    cloudBankId: "cloud_bank",
+    cloudRows: [{
+      question_id: "cloud_bank_2",
+      bank_id: "cloud_bank",
+      selected_answer: "C",
+      answered: true,
+      correct: true,
+      attempts: 1,
+      wrong_count: 0,
+      favorite: false,
+      mastered: false,
+      last_answered_at: "2026-06-17T12:05:00.000Z",
+      updated_at: "2026-06-17T12:05:01.000Z",
+    }],
+    questions: [{
+      id: "local_explicit",
+      bankId: "local_bank",
+      order: 9,
+      cloudQuestionId: "cloud_bank_2",
+    }, {
+      id: "local_legacy",
+      bankId: "local_bank",
+      order: 2,
+    }],
+  });
+
+  assert.equal(mapped.length, 1);
+  assert.equal(mapped[0].questionId, "local_explicit");
+});
+
 test("progress merge keeps newer answer state while preserving larger counters", () => {
   const merged = mergeProgressRows({
     localRows: [{

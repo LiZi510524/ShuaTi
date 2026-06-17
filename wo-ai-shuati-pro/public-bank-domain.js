@@ -24,10 +24,14 @@ export function buildSavedBankRelation({ userId, cloudBankId, localBankId, now }
   };
 }
 
-export function mapCloudProgressToLocal({ cloudRows, questions }) {
+export function mapCloudProgressToLocal({ cloudBankId = "", cloudRows, questions }) {
   const byCloudQuestionId = new Map();
   questions.forEach((question) => {
     if (question.cloudQuestionId) byCloudQuestionId.set(question.cloudQuestionId, question);
+    else if (cloudBankId && question.order) {
+      const fallbackId = `${cloudBankId}_${question.order}`;
+      if (!byCloudQuestionId.has(fallbackId)) byCloudQuestionId.set(fallbackId, question);
+    }
   });
   return cloudRows.flatMap((row) => {
     const question = byCloudQuestionId.get(row.question_id);

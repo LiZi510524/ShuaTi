@@ -1235,7 +1235,11 @@ async function saveCloudBankPayload(payload, localBankId, visibility) {
   });
   await saveBankWithQuestions(localBank, localQuestions);
   const cloudRows = await cloud.getProgress(payload.bank.id);
-  const mappedCloudRows = mapCloudProgressToLocal({ cloudRows: cloudRows || [], questions: localQuestions });
+  const mappedCloudRows = mapCloudProgressToLocal({
+    cloudBankId: payload.bank.id,
+    cloudRows: cloudRows || [],
+    questions: localQuestions,
+  });
   if (mappedCloudRows.length) await putMany(STORE_PROGRESS, mappedCloudRows);
 }
 
@@ -1271,7 +1275,11 @@ async function syncOneBank(bank) {
   if (!localBank.cloudId) return result;
   const localRows = await getByIndex(STORE_PROGRESS, "bankId", localBank.id);
   const cloudRows = await cloud.getProgress(localBank.cloudId);
-  const mappedCloudRows = mapCloudProgressToLocal({ cloudRows: cloudRows || [], questions });
+  const mappedCloudRows = mapCloudProgressToLocal({
+    cloudBankId: localBank.cloudId,
+    cloudRows: cloudRows || [],
+    questions,
+  });
   const mergedRows = mergeProgressRows({ localRows, cloudRows: mappedCloudRows });
   if (mergedRows.length) {
     await putMany(STORE_PROGRESS, mergedRows);
