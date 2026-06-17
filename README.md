@@ -5,18 +5,20 @@ ShuaTi 是一个刷题工具集合，主要包含：
 - 从学习通/超星提交结果页导出题库 Excel。
 - 使用“我爱刷题 Pro”导入题库、刷题、复习错题、收藏题目和同步数据。
 
+项目仓库：[liziyaaa/ShuaTi](https://github.com/liziyaaa/ShuaTi)
+
 ## 在线打开
 
 直接访问：
 
 ```text
-https://lizi510524.github.io/ShuaTi/
+https://liziyaaa.github.io/ShuaTi/
 ```
 
 也可以直接打开 Pro App：
 
 ```text
-https://lizi510524.github.io/ShuaTi/wo-ai-shuati-pro/
+https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/
 ```
 
 ## 在 iPhone 上添加到主屏幕
@@ -114,21 +116,6 @@ App 支持 `expert_script/导题模板.xlsx` 这种格式：
 4. 需要恢复时，选择备份 JSON 文件导入。
 
 建议定期导出备份，尤其是在清理浏览器数据或更换设备之前。
-
-## 本地打开
-
-如果要在电脑本地预览：
-
-```powershell
-cd D:\iCloudDrive\codex\xithink\wo-ai-shuati-pro
-python -m http.server 4174
-```
-
-然后打开：
-
-```text
-http://localhost:4174/
-```
 
 ## 文件位置
 

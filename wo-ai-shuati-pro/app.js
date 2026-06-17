@@ -585,9 +585,9 @@ function renderContributors() {
     <section class="authors-footer" aria-label="作者">
       <span class="authors-label">作者</span>
       <div class="authors-line">
-        <a class="author-link" href="https://github.com/LiZi510524" target="_blank" rel="noopener noreferrer">
-          <img class="author-avatar" src="https://github.com/LiZi510524.png?size=64" alt="" loading="lazy" />
-          <span>LiZi510524</span>
+        <a class="author-link" href="https://github.com/liziyaaa" target="_blank" rel="noopener noreferrer">
+          <img class="author-avatar" src="https://github.com/liziyaaa.png?size=64" alt="" loading="lazy" />
+          <span>liziyaaa</span>
         </a>
         <span class="authors-separator">和</span>
         <a class="author-link" href="https://github.com/kqrekybjinn" target="_blank" rel="noopener noreferrer">
