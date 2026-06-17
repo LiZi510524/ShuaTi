@@ -40,6 +40,16 @@ create table if not exists public.questions (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists public.user_bank_saves (
+  id text primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  bank_id text not null references public.question_banks(id) on delete cascade,
+  local_bank_id text,
+  saved_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, bank_id)
+);
+
 create table if not exists public.question_progress (
   id text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
@@ -60,11 +70,14 @@ create index if not exists profiles_username_idx on public.profiles(username);
 create index if not exists question_banks_owner_idx on public.question_banks(owner_id);
 create index if not exists question_banks_public_idx on public.question_banks(visibility, updated_at desc);
 create index if not exists questions_bank_idx on public.questions(bank_id, order_no);
+create index if not exists user_bank_saves_user_idx on public.user_bank_saves(user_id, updated_at desc);
+create index if not exists user_bank_saves_bank_idx on public.user_bank_saves(bank_id);
 create index if not exists progress_user_idx on public.question_progress(user_id, bank_id);
 
 alter table public.profiles enable row level security;
 alter table public.question_banks enable row level security;
 alter table public.questions enable row level security;
+alter table public.user_bank_saves enable row level security;
 alter table public.question_progress enable row level security;
 
 drop policy if exists "profiles are public readable" on public.profiles;
@@ -105,6 +118,12 @@ create policy "owners manage questions"
 on public.questions for all
 using (owner_id = auth.uid())
 with check (owner_id = auth.uid());
+
+drop policy if exists "users manage own saved banks" on public.user_bank_saves;
+create policy "users manage own saved banks"
+on public.user_bank_saves for all
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
 
 drop policy if exists "users manage own progress" on public.question_progress;
 create policy "users manage own progress"

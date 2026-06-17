@@ -7,6 +7,7 @@
 - 公开发布题库
 - 通过用户名查看公开主页
 - 通过题库 ID 保存别人整理的题库
+- 一个按钮同步自己的题库、保存关系和练习记录
 - 本地 IndexedDB 离线刷题和 JSON 备份
 
 ## 本地运行
@@ -42,7 +43,7 @@ export const PRO_CONFIG = {
 2. 点击 `New query`。
 3. 打开本项目的 `supabase/schema.sql`，复制全部 SQL。
 4. 粘贴到 Supabase 的 SQL 编辑器里，点击 `Run`。
-5. 运行成功后，左侧进入 `Table Editor`，应该能看到 `profiles`、`question_banks`、`questions`、`question_progress` 四张表。
+5. 运行成功后，左侧进入 `Table Editor`，应该能看到 `profiles`、`question_banks`、`questions`、`user_bank_saves`、`question_progress` 五张表。
 6. 左侧进入 `Authentication` -> `Providers`，确认 `Email` 已启用。
 7. 进入 `Authentication` -> `URL Configuration`，把 `Site URL` 设置为：
 
@@ -86,8 +87,10 @@ https://lizi510524.github.io/ShuaTi/
 ## 数据策略
 
 - 本地题库、错题、收藏、练习记录：IndexedDB。
-- 公开题库：Supabase。
-- 练习记录同步：当前题库有云端 ID 时可上传。
+- 私有题库和公开题库内容：Supabase 的 `question_banks`、`questions`。
+- 保存公开题库：本地保留离线副本，登录后在 `user_bank_saves` 建立当前账号自己的保存关系。
+- 练习记录同步：`question_progress` 按 `user_id` 隔离，每个人刷同一套题也有各自独立的错题、收藏、掌握和答题记录。
+- 同步入口：“我的”页只保留一个“同步题库与记录”按钮，内部会上传自己的题库、登记保存关系、拉取云端进度并合并到 IndexedDB。
 - 备份：设置页导出/导入 JSON。
 
 ## Excel 格式
