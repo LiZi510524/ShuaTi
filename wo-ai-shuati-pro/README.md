@@ -31,7 +31,7 @@ http://localhost:4174/
 export const PRO_CONFIG = {
   supabaseUrl: "https://vsrafuabubzwfnesryju.supabase.co",
   supabaseAnonKey: "sb_publishable_8zf8ucL8uQjj-3F6PYMlWA_VY1fm69F",
-  appUrl: "https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/",
+  appUrl: "https://liziyaaa.github.io/ShuaTi/",
 };
 ```
 
@@ -48,14 +48,14 @@ export const PRO_CONFIG = {
 7. 进入 `Authentication` -> `URL Configuration`，把 `Site URL` 设置为：
 
 ```text
-https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/
+https://liziyaaa.github.io/ShuaTi/
 ```
 
 8. 在 `Redirect URLs` 里也加入：
 
 ```text
-https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/
 https://liziyaaa.github.io/ShuaTi/
+https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/
 http://localhost:4174/
 ```
 
@@ -67,13 +67,13 @@ http://localhost:4174/
 线上地址：
 
 ```text
-https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/
+https://liziyaaa.github.io/ShuaTi/
 ```
 
-仓库根地址也会自动跳转到 Pro App：
+兼容入口：
 
 ```text
-https://liziyaaa.github.io/ShuaTi/
+https://liziyaaa.github.io/ShuaTi/wo-ai-shuati-pro/
 ```
 
 ## 发布公开题库
