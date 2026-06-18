@@ -840,7 +840,7 @@ function renderWrong() {
       </div>
     </section>
     <section class="question-list">
-      ${wrongQuestions.length ? wrongQuestions.map(renderWrongItem).join("") : renderEmpty("暂时没有错题", "手动加入错题本的题会出现在这里。")}
+      ${wrongQuestions.length ? wrongQuestions.map(renderWrongItem).join("") : renderEmpty("暂时没有错题", "答错的题会自动出现在这里。")}
     </section>
   `;
 }
@@ -1444,7 +1444,8 @@ async function submitAnswer() {
     answered: true,
     correct,
     attempts: previous.attempts + 1,
-    wrongCount: previous.wrongCount || 0,
+    wrongCount: correct ? (previous.wrongCount || 0) : (previous.wrongCount || 0) + 1,
+    mastered: correct ? previous.mastered : false,
     lastAnsweredAt: new Date().toISOString(),
   };
   state.progress.set(question.id, next);
@@ -1704,23 +1705,74 @@ async function importBackup(file) {
     if (!Array.isArray(backup.banks) || !Array.isArray(backup.questions)) {
       throw new Error("备份格式不正确");
     }
-    if (!confirm("导入备份会覆盖当前本地数据，确定继续吗？")) return;
-    await clearStores();
-    clearPracticeSession();
-    await putMany(STORE_BANKS, backup.banks);
-    await putMany(STORE_QUESTIONS, backup.questions);
-    await putMany(STORE_PROGRESS, backup.progress || []);
+    if (!confirm("导入备份会新增为本地题库，不会删除现有题库。若出现重复题库，可以导入后自行删除或保留。确定继续吗？")) return;
+    const imported = remapBackupForAppend(backup);
+    if (!imported.banks.length) throw new Error("备份里没有可导入的题库");
+    await putMany(STORE_BANKS, imported.banks);
+    await putMany(STORE_QUESTIONS, imported.questions);
+    if (imported.progress.length) await putMany(STORE_PROGRESS, imported.progress);
     await refreshBanks();
-    state.currentBankId = state.banks[0]?.id || "";
+    state.currentBankId = imported.banks[0]?.id || state.banks[0]?.id || "";
     if (state.currentBankId) localStorage.setItem(CURRENT_BANK_KEY, state.currentBankId);
     await loadCurrentBank();
-    showToast("备份已恢复");
+    showToast(`已导入 ${imported.banks.length} 个题库`);
     state.view = "banks";
     render();
   } catch (error) {
     console.error(error);
     showToast(`恢复失败：${error.message || error}`);
   }
+}
+
+function remapBackupForAppend(backup) {
+  const now = new Date().toISOString();
+  const bankIdMap = new Map();
+  const questionIdMap = new Map();
+  const questionBankMap = new Map();
+
+  const banks = backup.banks
+    .filter((bank) => bank && bank.id)
+    .map((bank) => {
+      const nextId = createId("bank");
+      bankIdMap.set(bank.id, nextId);
+      const { cloudId, visibility, ownerUsername, ...localBank } = bank;
+      return {
+        ...localBank,
+        id: nextId,
+        createdAt: localBank.createdAt || now,
+        updatedAt: now,
+      };
+    });
+
+  const questions = backup.questions
+    .filter((question) => question && question.id && bankIdMap.has(question.bankId))
+    .map((question) => {
+      const nextId = createId("q");
+      const nextBankId = bankIdMap.get(question.bankId);
+      questionIdMap.set(question.id, nextId);
+      questionBankMap.set(question.id, nextBankId);
+      const { cloudQuestionId, ...localQuestion } = question;
+      return {
+        ...localQuestion,
+        id: nextId,
+        bankId: nextBankId,
+        createdAt: localQuestion.createdAt || now,
+      };
+    });
+
+  const progress = (backup.progress || [])
+    .filter((item) => item && questionIdMap.has(item.questionId))
+    .map((item) => {
+      const nextQuestionId = questionIdMap.get(item.questionId);
+      return {
+        ...item,
+        id: nextQuestionId,
+        bankId: questionBankMap.get(item.questionId),
+        questionId: nextQuestionId,
+      };
+    });
+
+  return { banks, questions, progress };
 }
 
 async function clearAllData() {
