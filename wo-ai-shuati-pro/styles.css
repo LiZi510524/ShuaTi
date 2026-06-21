@@ -1,5 +1,6 @@
 :root {
   color-scheme: light;
+  --app-max-width: 520px;
   --bg: #f5f7fb;
   --surface: #ffffff;
   --surface-soft: #eef4ff;
@@ -62,7 +63,7 @@ code {
 }
 
 .app-shell {
-  width: min(100%, 920px);
+  width: min(100%, var(--app-max-width));
   min-height: 100vh;
   margin: 0 auto;
   padding: calc(18px + env(safe-area-inset-top)) 12px calc(82px + env(safe-area-inset-bottom));
@@ -99,6 +100,13 @@ h3 {
 .view {
   display: grid;
   gap: 12px;
+}
+
+.desktop-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
 }
 
 .panel,
@@ -824,7 +832,7 @@ h3 {
   z-index: 20;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  width: min(100%, 920px);
+  width: min(100%, var(--app-max-width));
   transform: translateX(-50%);
   padding: 6px 10px calc(6px + env(safe-area-inset-bottom));
   border-top: 1px solid rgba(148, 163, 184, 0.24);
@@ -888,7 +896,7 @@ h3 {
 
 @media (min-width: 760px) {
   .app-shell {
-    padding-inline: 22px;
+    padding-inline: 14px;
     padding-top: 22px;
   }
 
@@ -897,18 +905,7 @@ h3 {
   }
 
   .desktop-columns {
-    display: grid;
-    grid-template-columns: 360px minmax(0, 1fr);
-    gap: 14px;
-    align-items: start;
-  }
-
-  .form-grid.two {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .form-grid.three {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .edit-sheet {
@@ -917,7 +914,7 @@ h3 {
   }
 
   .bank-actions {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .question-picker-sheet {

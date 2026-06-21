@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         学习通提交结果导题导出器
 // @namespace    https://local.codex/chaoxing-source-export
-// @version      1.0.0
-// @description  在学习通提交后的作业详情页，从后台源码读取完整题目和正确答案，并按导题模板导出 Excel。不读取“我的答案”作为答案。
+// @version      1.1.0
+// @description  在学习通提交后的作业详情页，从后台源码读取完整题目和老师公布的正确答案，并按导题模板导出 Excel。未公布答案时 B 列留空，不读取“我的答案”作为答案。
 // @author       Codex
 // @match        *://mooc1.chaoxing.com/mooc-ans/mooc2/work/view*
 // @match        *://*.chaoxing.com/mooc-ans/mooc2/work/view*
@@ -56,7 +56,8 @@
       const blob = createTemplateXlsxBlob(rows);
       downloadBlob(`学习通导题-${dateStamp()}.xlsx`, blob);
       const stats = countByType(questions);
-      setStatus(`已导出 ${questions.length} 题：单选 ${stats["单选题"] || 0}，多选 ${stats["多选题"] || 0}，判断 ${stats["判断题"] || 0}`);
+      const emptyAnswerCount = questions.filter((item) => !item.correctAnswer).length;
+      setStatus(`已导出 ${questions.length} 题：单选 ${stats["单选题"] || 0}，多选 ${stats["多选题"] || 0}，判断 ${stats["判断题"] || 0}${emptyAnswerCount ? `，${emptyAnswerCount} 题答案留空` : ""}`);
     } catch (error) {
       console.error(error);
       setStatus(`导出失败：${error.message || error}`);
@@ -108,9 +109,9 @@
       .filter(Boolean);
     const correctAnswerRaw = cleanText(element.querySelector(".rightAnswerContent")?.textContent || "");
     const correctAnswer = formatCorrectAnswer(correctAnswerRaw, type, options);
-    const analysis = cleanText(element.querySelector(".analysis, .answerAnalysis, .mark_analysis")?.textContent || "");
+    const analysis = cleanText(element.querySelector(".analysis, .answerAnalysis, .mark_analysis, .qtAnalysis")?.textContent || "");
 
-    if (!questionText || !correctAnswer) return null;
+    if (!questionText) return null;
     return { type, question: questionText, correctAnswer, analysis, options };
   }
 
