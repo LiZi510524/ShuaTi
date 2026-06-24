@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildSavedBankRelation,
   getPublishBlocker,
+  mapPublicBankToLocal,
   mapCloudProgressToLocal,
   mergeProgressRows,
 } from "./public-bank-domain.js";
@@ -36,6 +37,38 @@ test("saved public bank relation is scoped to the current user", () => {
       updated_at: "2026-06-16T00:00:00.000Z",
     },
   );
+});
+
+test("saved public bank keeps the publisher username locally", () => {
+  const { localBank } = mapPublicBankToLocal({
+    payload: {
+      bank: {
+        id: "bank_public_1",
+        owner_username: "alice",
+        name: "公开题库",
+        course: "毛概",
+        chapter: "第一章",
+        tags: ["期末"],
+        counts: { single: 1 },
+      },
+      questions: [{
+        id: "bank_public_1_1",
+        order_no: 1,
+        stem: "题干",
+        answer: "A",
+        type: "single",
+        options: [{ label: "A", text: "选项", value: "A" }],
+      }],
+    },
+    localBankId: "local_bank_1",
+    now: "2026-06-16T00:00:00.000Z",
+    createQuestionId: () => "local_q_1",
+    buildBankName: (course, chapter) => `${course} - ${chapter}`,
+    countQuestionTypes: () => ({ single: 1 }),
+  });
+
+  assert.equal(localBank.ownerUsername, "alice");
+  assert.equal(localBank.visibility, "saved-public");
 });
 
 test("cloud progress maps back to the local question id before merging", () => {

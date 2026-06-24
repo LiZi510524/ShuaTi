@@ -10,26 +10,40 @@ import {
 } from "./public-bank-domain.js";
 
 const DB_NAME = "wo-ai-shuati-pro-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_BANKS = "banks";
 const STORE_QUESTIONS = "questions";
 const STORE_PROGRESS = "progress";
+const STORE_EXAM_SESSIONS = "examSessions";
 const CURRENT_BANK_KEY = "wo-ai-shuati-pro-current-bank";
 const PRACTICE_SESSION_KEY = "wo-ai-shuati-pro-practice-session";
+const SESSION_MODE_KEY = "wo-ai-shuati-pro-session-mode";
+const ANSWER_FEEDBACK_KEY = "wo-ai-shuati-pro-answer-feedback";
+const THEME_KEY = "wo-ai-shuati-pro-theme";
+const SESSION_MODES = new Set(["practice", "exam"]);
+const ANSWER_FEEDBACK_MODES = new Set(["instant", "submit"]);
+const THEMES = new Set(["default", "tokyonight", "high-contrast", "topaz", "nord", "solarized"]);
 
 const state = {
   view: "banks",
   banks: [],
   allProgress: [],
+  examSessions: [],
   currentBankId: localStorage.getItem(CURRENT_BANK_KEY) || "",
   questions: [],
   progress: new Map(),
   practiceMode: "sequential",
+  sessionMode: normalizeSessionMode(localStorage.getItem(SESSION_MODE_KEY) || localStorage.getItem(ANSWER_FEEDBACK_KEY)),
+  answerFeedbackMode: normalizeAnswerFeedbackMode(localStorage.getItem(ANSWER_FEEDBACK_KEY)),
+  appTheme: normalizeTheme(localStorage.getItem(THEME_KEY)),
   queue: [],
   queueIndex: 0,
   selected: new Set(),
   submitted: false,
   lastResult: null,
+  examRunResults: new Map(),
+  lastExamRecord: null,
+  examReviewIndex: 0,
   bankFilter: "",
   cloudConfigured: cloud.configured,
   cloudUser: null,
@@ -41,6 +55,7 @@ const state = {
   discoverLoading: false,
   syncStatus: "",
   editingBankId: "",
+  importSheetOpen: false,
   questionPickerOpen: false,
 };
 
@@ -52,9 +67,11 @@ let toastTimer = null;
 boot();
 
 async function boot() {
+  applyTheme(state.appTheme);
   bindGlobalEvents();
   await initCloud();
   await refreshBanks();
+  await refreshExamSessions();
   if (state.currentBankId && state.banks.some((bank) => bank.id === state.currentBankId)) {
     await loadCurrentBank();
   } else if (state.banks[0]) {
@@ -128,11 +145,17 @@ async function handleViewClick(event) {
   if (action === "open-bank") {
     await selectBank(id, "banks");
   }
+  if (action === "view-stats") {
+    await selectBank(id || state.currentBankId, "stats");
+  }
   if (action === "delete-bank") {
     await deleteBank(id);
   }
   if (action === "publish-bank") {
     await publishLocalBank(id);
+  }
+  if (action === "update-published-bank") {
+    await updatePublishedBank(id);
   }
   if (action === "copy-bank-id") {
     await copyText(id);
@@ -142,6 +165,14 @@ async function handleViewClick(event) {
   }
   if (action === "close-edit-bank") {
     closeBankEditor();
+  }
+  if (action === "open-import") {
+    state.importSheetOpen = true;
+    render();
+  }
+  if (action === "close-import") {
+    state.importSheetOpen = false;
+    render();
   }
   if (action === "toggle-question-picker") {
     toggleQuestionPicker();
@@ -153,22 +184,39 @@ async function handleViewClick(event) {
     jumpToQuestion(Number(target.dataset.index));
   }
   if (action === "set-mode") {
+    if (hasActivePractice() && !confirm("切换练习模式会清空当前进行中的答题，确定继续吗？")) return;
     state.practiceMode = target.dataset.mode;
     state.questionPickerOpen = false;
     resetPracticeQueue();
     render();
   }
+  if (action === "set-session-mode") {
+    setSessionMode(target.dataset.mode);
+  }
+  if (action === "set-answer-feedback") {
+    setAnswerFeedbackMode(target.dataset.mode);
+  }
   if (action === "start-practice") {
+    if (hasActivePractice() && !confirm("重新开始会清空当前进行中的答题，确定继续吗？")) return;
     startPractice();
   }
   if (action === "resume-practice") {
     resumePractice();
   }
   if (action === "choose-option") {
-    chooseOption(target.dataset.value);
+    await chooseOption(target.dataset.value);
   }
   if (action === "submit-answer") {
     await submitAnswer();
+  }
+  if (action === "finish-exam") {
+    await finishExam();
+  }
+  if (action === "add-exam-wrongs") {
+    await addExamWrongQuestions(target.dataset.id);
+  }
+  if (action === "review-exam-question") {
+    reviewExamQuestion(Number(target.dataset.index));
   }
   if (action === "next-question") {
     nextQuestion();
@@ -236,6 +284,12 @@ async function handleViewChange(event) {
     const file = event.target.files?.[0];
     if (file) await importBackup(file);
   }
+  if (event.target.matches("#themeSelect")) {
+    applyTheme(event.target.value);
+  }
+  if (event.target.matches("#answerFeedbackSelect")) {
+    setAnswerFeedbackMode(event.target.value);
+  }
 }
 
 function handleViewInput(event) {
@@ -274,8 +328,44 @@ function renderBanks() {
 
   view.innerHTML = `
     <section class="desktop-columns">
+      <section class="panel bank-library-panel">
+        <div class="bank-head">
+          <div>
+            <h2>我的题库</h2>
+            <p class="subtle">管理本机题库、公开题库副本和练习记录。</p>
+          </div>
+          <button class="button compact-button" type="button" data-action="open-import">导入</button>
+        </div>
+        <section class="metric-row bank-library-metrics">
+          <div class="metric"><strong>${state.banks.length}</strong><span>题库</span></div>
+          <div class="metric"><strong>${totalQuestions}</strong><span>总题数</span></div>
+          <div class="metric"><strong>${totalWrong}</strong><span>错题</span></div>
+        </section>
+        <div class="field">
+          <label for="bankSearch">搜索题库/标签</label>
+          <input id="bankSearch" type="search" value="${escapeAttr(state.bankFilter)}" placeholder="输入课程、章节或标签" />
+        </div>
+        <div class="bank-list" data-bank-list>${renderBankListContent(banks)}</div>
+      </section>
+    </section>
+    ${renderBankEditSheet()}
+    ${renderImportSheet()}
+  `;
+}
+
+function renderImportSheet() {
+  if (!state.importSheetOpen) return "";
+  return `
+    <div class="sheet-backdrop" data-action="close-import"></div>
+    <section class="edit-sheet" role="dialog" aria-modal="true" aria-labelledby="importSheetTitle">
       <form id="importForm" class="panel form-grid" autocomplete="off">
-        <h2>导入题库</h2>
+        <div class="bank-head">
+          <div>
+            <h2 id="importSheetTitle">导入题库</h2>
+            <p class="subtle">从 Excel 新建本地题库，导入后仍停留在题库页。</p>
+          </div>
+          <button class="icon-button" type="button" data-action="close-import" aria-label="关闭">×</button>
+        </div>
         <div class="form-grid two">
           <div class="field">
             <label for="courseName">课程</label>
@@ -294,28 +384,12 @@ function renderBanks() {
           <label for="xlsxFile">Excel 文件</label>
           <input id="xlsxFile" name="file" type="file" accept=".xlsx" required />
         </div>
-        <button class="button" type="submit">导入为新题库</button>
+        <div class="actions edit-sheet-actions">
+          <button class="ghost-button" type="button" data-action="close-import">取消</button>
+          <button class="button" type="submit">导入为新题库</button>
+        </div>
       </form>
-
-      <section class="panel bank-library-panel">
-        <div class="bank-head">
-          <div>
-            <h2>我的题库</h2>
-          </div>
-        </div>
-        <section class="metric-row bank-library-metrics">
-          <div class="metric"><strong>${state.banks.length}</strong><span>题库</span></div>
-          <div class="metric"><strong>${totalQuestions}</strong><span>总题数</span></div>
-          <div class="metric"><strong>${totalWrong}</strong><span>错题</span></div>
-        </section>
-        <div class="field">
-          <label for="bankSearch">搜索题库/标签</label>
-          <input id="bankSearch" type="search" value="${escapeAttr(state.bankFilter)}" placeholder="输入课程、章节或标签" />
-        </div>
-        <div class="bank-list" data-bank-list>${renderBankListContent(banks)}</div>
-      </section>
     </section>
-    ${renderBankEditSheet()}
   `;
 }
 
@@ -337,6 +411,8 @@ function renderBankCard(bank) {
   const tags = [...(bank.tags || [])].filter(Boolean);
   const course = getBankTitle(bank);
   const chapter = cleanText(bank.chapter);
+  const questionCount = bank.questionCount || bank.total || 0;
+  const ownerUsername = getBankOwnerUsername(bank);
   return `
     <article class="bank-card">
       <div class="bank-head bank-card-head">
@@ -345,10 +421,12 @@ function renderBankCard(bank) {
             <span class="bank-course">${escapeHtml(course)}</span>
             ${chapter ? `<span class="bank-chapter">${escapeHtml(chapter)}</span>` : ""}
           </h3>
-          <p class="bank-meta">${bank.questionCount} 题 · 单选 ${bank.counts.single || 0} · 多选 ${bank.counts.multiple || 0} · 判断 ${bank.counts.judge || 0}</p>
+          <p class="bank-meta">${questionCount} 题 · 单选 ${bank.counts?.single || 0} · 多选 ${bank.counts?.multiple || 0} · 判断 ${bank.counts?.judge || 0}</p>
+          ${bank.cloudId ? `<p class="bank-owner-line">由${renderOwnerLink(ownerUsername)}发布维护</p>` : ""}
         </div>
         <div class="bank-head-actions">
           ${bank.id === state.currentBankId ? `<span class="type-pill good">当前</span>` : ""}
+          ${bank.cloudId ? `<span class="type-pill">公开题库</span>` : ""}
           <button class="ghost-button edit-inline-button" type="button" data-action="edit-bank" data-id="${bank.id}">编辑</button>
         </div>
       </div>
@@ -356,11 +434,12 @@ function renderBankCard(bank) {
       <div class="progress-track" aria-label="完成进度">
         <div class="progress-fill" style="width:${progress.rate}%"></div>
       </div>
-      <p class="bank-meta">已做 ${progress.done}/${bank.questionCount} · 正确率 ${accuracy}% · 错题 ${progress.wrong}</p>
+      <p class="bank-meta">已做 ${progress.done}/${questionCount} · 正确率 ${accuracy}% · 错题 ${progress.wrong}</p>
       <div class="actions bank-actions">
         <button class="button" type="button" data-action="select-bank" data-id="${bank.id}">开始刷题</button>
         <button class="ghost-button" type="button" data-action="open-bank" data-id="${bank.id}">设为当前</button>
-        <button class="ghost-button" type="button" data-action="publish-bank" data-id="${bank.id}">${bank.cloudId ? "更新发布" : "公开发布"}</button>
+        <button class="ghost-button" type="button" data-action="view-stats" data-id="${bank.id}">考试记录</button>
+        ${bank.cloudId ? "" : `<button class="ghost-button" type="button" data-action="publish-bank" data-id="${bank.id}">公开发布</button>`}
         ${bank.cloudId ? `<button class="ghost-button" type="button" data-action="copy-bank-id" data-id="${bank.cloudId}">复制ID</button>` : ""}
         <button class="danger-button" type="button" data-action="delete-bank" data-id="${bank.id}">删除</button>
       </div>
@@ -372,6 +451,7 @@ function renderBankEditSheet() {
   if (!state.editingBankId) return "";
   const bank = state.banks.find((item) => item.id === state.editingBankId);
   if (!bank) return "";
+  const isPublicBank = Boolean(bank.cloudId);
   return `
     <div class="sheet-backdrop" data-action="close-edit-bank"></div>
     <section class="edit-sheet" role="dialog" aria-modal="true" aria-labelledby="bankEditTitle">
@@ -379,25 +459,12 @@ function renderBankEditSheet() {
         <div class="bank-head">
           <div>
             <h2 id="bankEditTitle">编辑题库</h2>
-            <p class="subtle">课程、章节和标签会一起保存。</p>
+            <p class="subtle">${isPublicBank ? "公开题库的课程和章节由发布者维护；这里只能添加本地标签。" : "课程、章节和标签会一起保存。"}</p>
           </div>
           <button class="icon-button" type="button" data-action="close-edit-bank" aria-label="关闭">×</button>
         </div>
         <input type="hidden" name="id" value="${escapeAttr(bank.id)}" />
-        <div class="form-grid three">
-          <div class="field">
-            <label for="editCourseName">课程</label>
-            <input id="editCourseName" name="course" type="text" value="${escapeAttr(bank.course || getBankTitle(bank))}" required />
-          </div>
-          <div class="field">
-            <label for="editChapterName">章节</label>
-            <input id="editChapterName" name="chapter" type="text" value="${escapeAttr(bank.chapter || "")}" />
-          </div>
-          <div class="field">
-            <label for="editBankTags">标签</label>
-            <input id="editBankTags" name="tags" type="text" value="${escapeAttr((bank.tags || []).join(", "))}" />
-          </div>
-        </div>
+        ${isPublicBank ? renderPublicBankTagEditor(bank) : renderLocalBankEditorFields(bank)}
         <div class="actions edit-sheet-actions">
           <button class="ghost-button" type="button" data-action="close-edit-bank">取消</button>
           <button class="button" type="submit">保存</button>
@@ -405,6 +472,50 @@ function renderBankEditSheet() {
       </form>
     </section>
   `;
+}
+
+function renderLocalBankEditorFields(bank) {
+  return `
+    <div class="form-grid three">
+      <div class="field">
+        <label for="editCourseName">课程</label>
+        <input id="editCourseName" name="course" type="text" value="${escapeAttr(bank.course || getBankTitle(bank))}" required />
+      </div>
+      <div class="field">
+        <label for="editChapterName">章节</label>
+        <input id="editChapterName" name="chapter" type="text" value="${escapeAttr(bank.chapter || "")}" />
+      </div>
+      <div class="field">
+        <label for="editBankTags">标签</label>
+        <input id="editBankTags" name="tags" type="text" value="${escapeAttr((bank.tags || []).join(", "))}" />
+      </div>
+    </div>
+  `;
+}
+
+function renderPublicBankTagEditor(bank) {
+  const ownerUsername = getBankOwnerUsername(bank);
+  return `
+    <div class="setting-list">
+      <div class="setting-row">
+        <div>
+          <strong>${escapeHtml(getBankTitle(bank))}</strong>
+          <p class="subtle">${bank.chapter ? `章节：${escapeHtml(bank.chapter)} · ` : ""}由 @${escapeHtml(ownerUsername || "unknown")} 发布维护</p>
+        </div>
+        <span class="type-pill">公开题库</span>
+      </div>
+    </div>
+    ${(bank.tags || []).length ? `<div class="tag-row">${bank.tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
+    <div class="field">
+      <label for="editBankAddTags">添加本地标签</label>
+      <input id="editBankAddTags" name="addTags" type="text" placeholder="期末, 常刷, 已保存" />
+    </div>
+  `;
+}
+
+function renderOwnerLink(username) {
+  const value = cleanText(username) || "unknown";
+  return `<button class="owner-link" type="button" data-action="open-owner" data-username="${escapeAttr(value)}">@${escapeHtml(value)}</button>`;
 }
 
 function renderDiscover() {
@@ -475,23 +586,65 @@ function renderAccount() {
     ${renderAccountHero()}
     ${renderEmailAccountPanel()}
     ${renderProfileForm()}
-    ${renderCloudSyncPanel(bank, summary)}
-    ${renderSettingsContent()}
+    ${renderPublishedBankManager()}
+    ${renderSettingsContent(bank, summary)}
     ${renderContributors()}
+  `;
+}
+
+function renderPublishedBankManager() {
+  if (!state.cloudConfigured) return "";
+  const username = state.cloudProfile?.username || "";
+  const publishedBanks = getOwnedPublishedBanks();
+  return `
+    <section class="panel account-section">
+      <div class="bank-head">
+        <div>
+          <h2>我发布的题库</h2>
+          <p class="subtle">${state.cloudUser ? "公开题库在这里统一维护；题库页只展示发布者，不提供更新入口。" : "登录后可统一管理自己发布过的公开题库。"}</p>
+        </div>
+        ${username ? `<span class="type-pill">@${escapeHtml(username)}</span>` : ""}
+      </div>
+      <div class="bank-list">
+        ${publishedBanks.length ? publishedBanks.map(renderPublishedBankItem).join("") : renderEmpty("暂无已发布题库", "在题库页首次公开发布后，会出现在这里统一管理。")}
+      </div>
+    </section>
+  `;
+}
+
+function renderPublishedBankItem(bank) {
+  const ownerUsername = getBankOwnerUsername(bank);
+  const questionCount = bank.questionCount || bank.total || 0;
+  const canManage = isOwnedPublishedBank(bank);
+  return `
+    <article class="list-item published-bank-item">
+      <div class="bank-head">
+        <div>
+          <strong>${escapeHtml(getBankTitle(bank))}</strong>
+          <p class="subtle">${questionCount} 题 · 发布者 @${escapeHtml(ownerUsername || "unknown")} · ${formatDateTime(bank.updatedAt || bank.createdAt)}</p>
+          <p class="bank-owner-line">公开 ID ${escapeHtml(bank.cloudId || "")}</p>
+        </div>
+        <span class="type-pill good">公开</span>
+      </div>
+      <div class="actions">
+        <button class="ghost-button" type="button" data-action="copy-bank-id" data-id="${bank.cloudId}">复制ID</button>
+        <button class="button" type="button" data-action="update-published-bank" data-id="${bank.id}" ${canManage ? "" : "disabled"}>更新公开题库</button>
+      </div>
+    </article>
   `;
 }
 
 function renderCloudSyncPanel(bank, summary) {
   if (!state.cloudConfigured) return "";
   return `
-    <section class="panel account-section">
-      <h2>云同步</h2>
+    <section class="settings-subsection">
+      <div class="section-label">云同步</div>
       <p class="subtle">${bank ? escapeHtml(getBankTitle(bank)) : "从云端拉取这个账号的题库，也会上传本机题库和练习记录。"}</p>
       ${bank ? `
         <div class="metric-row">
-          <div class="metric"><strong>${summary.done}</strong><span>已做</span></div>
-          <div class="metric"><strong>${summary.accuracy}%</strong><span>正确率</span></div>
-          <div class="metric"><strong>${summary.wrong}</strong><span>错题</span></div>
+          <div class="metric compact-metric"><strong>${summary.done}</strong><span>已做</span></div>
+          <div class="metric compact-metric"><strong>${summary.accuracy}%</strong><span>正确率</span></div>
+          <div class="metric compact-metric"><strong>${summary.wrong}</strong><span>错题</span></div>
         </div>
       ` : ""}
       <div class="actions" style="margin-top:12px;">
@@ -637,6 +790,10 @@ function renderPractice() {
 
   const summary = getCurrentSummary();
   const current = state.queue[state.queueIndex];
+  if (state.lastExamRecord) {
+    view.innerHTML = renderExamSummary(state.lastExamRecord);
+    return;
+  }
   const savedSession = current ? null : getValidPracticeSession();
   const startButtonLabel = current || savedSession ? "重新开始" : "开始练习";
   const modes = [
@@ -654,12 +811,18 @@ function renderPractice() {
           <h2>${escapeHtml(getBankTitle(bank))}</h2>
           <p class="subtle">已做 ${summary.done}/${state.questions.length} · 正确率 ${summary.accuracy}% · 错题 ${summary.wrong}</p>
         </div>
-        <span class="type-pill">${escapeHtml(modeName(state.practiceMode))}</span>
+        <div class="practice-mode-pills">
+          <span class="type-pill">${escapeHtml(queueModeName(state.practiceMode))}</span>
+          <span class="type-pill warn">${escapeHtml(sessionModeName(state.sessionMode))}</span>
+          ${state.sessionMode === "practice" ? `<span class="type-pill">${escapeHtml(answerFeedbackModeName(state.answerFeedbackMode))}</span>` : ""}
+        </div>
       </div>
+      <p class="subtle">练习范围</p>
       <div class="chip-row">
         ${modes.map(([mode, label]) => `<button class="mode-chip ${state.practiceMode === mode ? "is-active" : ""}" type="button" data-action="set-mode" data-mode="${mode}">${label}</button>`).join("")}
       </div>
       <div class="actions practice-actions">
+        <button class="ghost-button" type="button" data-action="view-stats" data-id="${bank.id}">考试记录</button>
         <button class="ghost-button" type="button" data-action="start-practice">${startButtonLabel}</button>
       </div>
     </section>
@@ -671,12 +834,19 @@ function renderQueueEmpty(savedSession = getValidPracticeSession()) {
   const count = buildQueue(state.practiceMode).length;
   const hasResume = Boolean(savedSession);
   const resumeText = hasResume
-    ? `${modeName(savedSession.mode)} · 第 ${savedSession.queueIndex + 1}/${savedSession.queueIds.length} 题`
+    ? `${sessionModeName(savedSession.sessionMode)} · ${queueModeName(savedSession.mode)} · 第 ${savedSession.queueIndex + 1}/${savedSession.queueIds.length} 题`
     : "";
   return `
     <section class="empty-state practice-start">
       <h2>${hasResume ? "继续上次练习" : count ? "准备开始" : "这个模式暂无题目"}</h2>
       <p>${hasResume ? `已保存上次进度：${resumeText}。` : count ? `当前模式有 ${count} 道题。` : "可以换一个模式，或者先完成一些题目。 "}</p>
+      <div class="start-mode-block">
+        <p class="subtle">本次模式</p>
+        <div class="chip-row">
+          ${["practice", "exam"].map((mode) => `<button class="mode-chip ${state.sessionMode === mode ? "is-active" : ""}" type="button" data-action="set-session-mode" data-mode="${mode}">${sessionModeName(mode)}</button>`).join("")}
+        </div>
+        ${state.sessionMode === "practice" ? `<p class="subtle">当前反馈：${escapeHtml(answerFeedbackModeName(state.answerFeedbackMode))}。多选题始终需要提交后显示答案。</p>` : `<p class="subtle">考试模式可提前交卷，未作答题目记为未答，不加入错题本。</p>`}
+      </div>
       <div class="actions question-actions">
         ${hasResume && count ? `<button class="ghost-button" type="button" data-action="start-practice">重新开始</button>` : ""}
         ${hasResume ? `<button class="button primary-action" type="button" data-action="resume-practice">继续上次</button>` : count ? `<button class="button primary-action" type="button" data-action="start-practice">开始练习</button>` : ""}
@@ -690,6 +860,8 @@ function renderQuestionCard(question) {
   const progressText = `${state.queueIndex + 1}/${state.queue.length}`;
   const percent = state.queue.length ? Math.round(((state.queueIndex + 1) / state.queue.length) * 100) : 0;
   const result = state.lastResult;
+  const isExam = state.sessionMode === "exam";
+  const isLastQuestion = state.queueIndex + 1 >= state.queue.length;
   return `
     <article class="question-card">
       <div class="question-toolbar">
@@ -709,12 +881,26 @@ function renderQuestionCard(question) {
       ${question.type === "fill" ? renderFillInput() : `<div class="option-list">${question.options.map((option) => renderOption(question, option)).join("")}</div>`}
       <div class="actions question-actions">
         <button class="ghost-button" type="button" data-action="start-practice">重新开始</button>
-        ${state.submitted ? `<button class="button primary-action" type="button" data-action="next-question">${state.queueIndex + 1 >= state.queue.length ? "完成本组" : "下一题"}</button>` : `<button class="button primary-action" type="button" data-action="submit-answer">提交答案</button>`}
+        ${renderQuestionPrimaryAction({ isExam, isLastQuestion })}
       </div>
-      ${state.submitted && result ? renderResult(question, result) : ""}
+      ${state.submitted && result && !isExam ? renderResult(question, result) : ""}
     </article>
     ${renderQuestionPicker()}
   `;
+}
+
+function renderQuestionPrimaryAction({ isExam, isLastQuestion }) {
+  if (isExam) {
+    return isLastQuestion
+      ? `<button class="button primary-action" type="button" data-action="finish-exam">提交考试</button>`
+      : `
+        <button class="ghost-button" type="button" data-action="finish-exam">提前交卷</button>
+        <button class="button primary-action" type="button" data-action="next-question">下一题</button>
+      `;
+  }
+  return state.submitted
+    ? `<button class="button primary-action" type="button" data-action="next-question">${isLastQuestion ? "完成本组" : "下一题"}</button>`
+    : `<button class="button primary-action" type="button" data-action="submit-answer">提交答案</button>`;
 }
 
 function renderQuestionPicker() {
@@ -778,13 +964,13 @@ function groupQueueByType() {
 function renderOption(question, option) {
   const value = option.value || option.label;
   const selected = state.selected.has(value);
-  const shouldMark = state.submitted;
+  const shouldRevealAnswer = state.submitted && state.sessionMode === "practice";
   const correct = isOptionCorrect(question, option);
-  const wrongSelected = shouldMark && selected && !correct;
+  const wrongSelected = shouldRevealAnswer && selected && !correct;
   const className = [
     "option-button",
     selected ? "is-selected" : "",
-    shouldMark && correct ? "is-correct" : "",
+    shouldRevealAnswer && correct ? "is-correct" : "",
     wrongSelected ? "is-wrong" : "",
   ].filter(Boolean).join(" ");
   return `
@@ -820,6 +1006,14 @@ function renderResult(question, result) {
       <div>正确答案：${escapeHtml(answerText)}</div>
       <div class="explanation">${escapeHtml(question.analysis || "暂无解析。")}</div>
       ${wrongAction}
+    </section>
+  `;
+}
+
+function renderExamQuestionStatus(result) {
+  return `
+    <section class="result-box ${result.correct ? "good" : "bad"}">
+      <div>${result.correct ? "回答正确" : "回答错误"}</div>
     </section>
   `;
 }
@@ -869,6 +1063,7 @@ function renderStats() {
     return;
   }
   const summary = getCurrentSummary();
+  const examRecords = getCurrentExamRecords();
   const typeRows = ["single", "multiple", "judge", "fill"].map((type) => {
     const items = state.questions.filter((question) => question.type === type);
     const progressItems = items.map((question) => getProgress(question.id));
@@ -902,6 +1097,26 @@ function renderStats() {
         `).join("")}
       </div>
     </section>
+    <section class="panel">
+      <h2>考试记录</h2>
+      <div class="bank-list">
+        ${examRecords.length ? examRecords.map(renderExamRecordItem).join("") : renderEmpty("暂无考试记录", "切换到考试模式并提交后，会在这里留下记录。")}
+      </div>
+    </section>
+  `;
+}
+
+function renderExamRecordItem(record) {
+  return `
+    <article class="list-item">
+      <div class="bank-head">
+        <div>
+          <strong>${record.accuracy}%</strong>
+          <p class="subtle">${formatDateTime(record.createdAt)} · ${record.correct}/${record.total} 正确 · 错 ${record.wrong}</p>
+        </div>
+        <button class="ghost-button" type="button" data-action="add-exam-wrongs" data-id="${record.id}" ${record.wrong ? "" : "disabled"}>错题入本</button>
+      </div>
+    </article>
   `;
 }
 
@@ -911,11 +1126,42 @@ function renderSettings() {
   `;
 }
 
-function renderSettingsContent() {
+function renderSettingsContent(bank = getCurrentBank(), summary = bank ? getCurrentSummary() : null) {
   return `
     <section class="panel account-section">
       <h2>设置与备份</h2>
       <p class="subtle">题库和练习记录保存在本机 IndexedDB。建议定期导出备份，避免清理 Safari 数据后丢失。</p>
+      <div class="setting-list">
+        <div class="setting-row">
+          <div>
+            <strong>练习反馈</strong>
+            <p class="subtle">只影响练习模式；多选题始终需要提交后显示答案。</p>
+          </div>
+          <div class="setting-control">
+            <select id="answerFeedbackSelect" aria-label="答题反馈模式">
+              <option value="instant" ${state.answerFeedbackMode === "instant" ? "selected" : ""}>直接显示答案</option>
+              <option value="submit" ${state.answerFeedbackMode === "submit" ? "selected" : ""}>提交后显示答案</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <strong>主题</strong>
+            <p class="subtle">切换应用配色，只保存在本机。</p>
+          </div>
+          <div class="setting-control">
+            <select id="themeSelect" aria-label="主题">
+              <option value="default" ${state.appTheme === "default" ? "selected" : ""}>默认</option>
+              <option value="tokyonight" ${state.appTheme === "tokyonight" ? "selected" : ""}>Tokyo Night</option>
+              <option value="high-contrast" ${state.appTheme === "high-contrast" ? "selected" : ""}>高对比</option>
+              <option value="topaz" ${state.appTheme === "topaz" ? "selected" : ""}>蓝色托帕石</option>
+              <option value="nord" ${state.appTheme === "nord" ? "selected" : ""}>Nord</option>
+              <option value="solarized" ${state.appTheme === "solarized" ? "selected" : ""}>Solarized Light</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      ${renderCloudSyncPanel(bank, summary)}
       <div class="grid">
         <button class="button" type="button" data-action="export-backup">导出全部备份</button>
         <div class="field">
@@ -976,7 +1222,8 @@ async function importQuestionBank(formData) {
     await refreshBanks();
     await loadCurrentBank();
     resetPracticeQueue();
-    state.view = "practice";
+    state.importSheetOpen = false;
+    state.view = "banks";
     showToast(`已导入 ${questions.length} 道题`);
     render();
   } catch (error) {
@@ -1004,6 +1251,7 @@ async function publishLocalBank(bankId) {
     }
     const bank = state.banks.find((item) => item.id === bankId);
     if (!bank) throw new Error("找不到题库");
+    if (bank.cloudId) throw new Error("这个题库已经公开发布，请到“我的-我发布的题库”中更新");
     const questions = await getByIndex(STORE_QUESTIONS, "bankId", bankId);
     if (!questions.length) throw new Error("题库里没有题目");
     const message = `确定公开发布“${getBankTitle(bank)}”吗？\n\n公开后，题目、正确答案和解析都会被其他人搜索、查看和保存。你的邮箱不会公开展示，公开署名为 @${state.cloudProfile.username}。`;
@@ -1028,6 +1276,48 @@ async function publishLocalBank(bankId) {
   } catch (error) {
     console.error(error);
     showToast(`发布失败：${error.message || error}`);
+  }
+}
+
+async function updatePublishedBank(bankId) {
+  try {
+    const blocker = getPublishBlocker({
+      cloudConfigured: state.cloudConfigured,
+      cloudUser: state.cloudUser,
+      cloudProfile: state.cloudProfile,
+    });
+    if (blocker) {
+      routeToAccountWithMessage(blocker);
+      return;
+    }
+    const bank = state.banks.find((item) => item.id === bankId);
+    if (!bank) throw new Error("找不到题库");
+    if (!bank.cloudId) throw new Error("这个题库还没有公开发布");
+    if (!isOwnedPublishedBank(bank)) throw new Error("只有发布者可以更新这个公开题库");
+    const questions = await getByIndex(STORE_QUESTIONS, "bankId", bankId);
+    if (!questions.length) throw new Error("题库里没有题目");
+    const message = `确定更新公开题库“${getBankTitle(bank)}”吗？\n\n这会覆盖别人搜索到的公开版本，包括题目、正确答案和解析。公开署名仍为 @${state.cloudProfile.username}。`;
+    if (!confirm(message)) return;
+    showToast("正在更新公开题库...");
+    const cloudId = await cloud.publishBank(bank, questions.sort((a, b) => a.order - b.order), state.cloudProfile, "public");
+    await putMany(STORE_QUESTIONS, questions.map((question) => ({
+      ...question,
+      cloudQuestionId: `${cloudId}_${question.order}`,
+    })));
+    const updated = {
+      ...bank,
+      cloudId,
+      visibility: "public",
+      ownerUsername: state.cloudProfile.username,
+      updatedAt: new Date().toISOString(),
+    };
+    await putRecord(STORE_BANKS, updated);
+    await refreshBanks();
+    showToast("公开题库已更新");
+    render();
+  } catch (error) {
+    console.error(error);
+    showToast(`更新失败：${error.message || error}`);
   }
 }
 
@@ -1128,12 +1418,8 @@ async function usePublicBank(bankId) {
     if (!payload) throw new Error("找不到公开题库");
     const existing = findSavedPublicBank(state.banks, payload.bank.id);
     if (existing) {
-      state.currentBankId = existing.id;
-      localStorage.setItem(CURRENT_BANK_KEY, existing.id);
-      await loadCurrentBank();
-      resetPracticeQueue();
-      state.view = "practice";
-      showToast("这个公开题库已经保存过，已打开本地副本");
+      setCurrentBank(existing.id, true);
+      showToast("这个公开题库已经保存过，可在题库页打开本地副本");
       render();
       return;
     }
@@ -1151,13 +1437,10 @@ async function usePublicBank(bankId) {
     if (state.cloudUser) {
       await cloud.savePublicBank(payload.bank.id, localBankId);
     }
-    state.currentBankId = localBankId;
-    localStorage.setItem(CURRENT_BANK_KEY, localBankId);
+    setCurrentBank(localBankId, true);
     await refreshBanks();
-    await loadCurrentBank();
     resetPracticeQueue();
-    state.view = "practice";
-    showToast(`已保存 ${localQuestions.length} 道题`);
+    showToast(`已保存 ${localQuestions.length} 道题，可在题库页开始练习`);
     render();
   } catch (error) {
     console.error(error);
@@ -1361,6 +1644,9 @@ function startPractice() {
   state.selected = new Set();
   state.submitted = false;
   state.lastResult = null;
+  state.examRunResults = new Map();
+  state.lastExamRecord = null;
+  state.examReviewIndex = 0;
   state.questionPickerOpen = false;
   if (!state.queue.length) {
     showToast("当前模式暂无题目");
@@ -1378,11 +1664,17 @@ function resumePractice() {
   }
   const byId = new Map(state.questions.map((question) => [question.id, question]));
   state.practiceMode = session.mode;
+  state.sessionMode = normalizeSessionMode(session.sessionMode);
+  state.answerFeedbackMode = normalizeAnswerFeedbackMode(session.answerFeedbackMode || state.answerFeedbackMode);
   state.queue = session.queueIds.map((id) => byId.get(id)).filter(Boolean);
   state.queueIndex = Math.min(session.queueIndex, Math.max(state.queue.length - 1, 0));
   state.selected = new Set(session.selected || []);
   state.submitted = Boolean(session.submitted);
   state.lastResult = session.lastResult || null;
+  state.examRunResults = new Map(Array.isArray(session.examRunResults) ? session.examRunResults : []);
+  if (state.sessionMode === "exam") {
+    restoreSelectionForCurrentQuestion();
+  }
   state.questionPickerOpen = false;
   persistPracticeSession();
   render();
@@ -1403,10 +1695,25 @@ function resetPracticeQueue() {
   state.selected = new Set();
   state.submitted = false;
   state.lastResult = null;
+  state.examRunResults = new Map();
+  state.lastExamRecord = null;
+  state.examReviewIndex = 0;
   state.questionPickerOpen = false;
 }
 
-function chooseOption(value) {
+function hasActivePractice() {
+  return Boolean(
+    state.queue.length
+    && (
+      state.selected.size
+      || state.submitted
+      || state.lastResult
+      || state.examRunResults.size
+    )
+  );
+}
+
+async function chooseOption(value) {
   if (state.submitted) return;
   const question = state.queue[state.queueIndex];
   if (!question) return;
@@ -1417,49 +1724,77 @@ function chooseOption(value) {
     state.selected = new Set([value]);
   }
   persistPracticeSession();
+  if (state.sessionMode === "exam") {
+    saveExamSelection();
+    persistPracticeSession();
+    render();
+    return;
+  }
+  if (state.answerFeedbackMode === "instant" && question.type !== "multiple") {
+    await submitAnswer();
+    return;
+  }
   render();
 }
 
 async function submitAnswer() {
   const question = state.queue[state.queueIndex];
   if (!question) return;
+  if (state.sessionMode === "exam") {
+    saveExamSelection();
+    showToast("已记录本题答案");
+    persistPracticeSession();
+    render();
+    return;
+  }
+  const result = evaluateCurrentQuestion(question);
+  if (!result) return;
+  await commitPracticeAnswer(question, result);
+  render();
+}
+
+function evaluateCurrentQuestion(question) {
   if (question.type === "fill") {
     const fillValue = cleanText(document.querySelector("#fillAnswer")?.value || "");
     state.selected = fillValue ? new Set([fillValue]) : new Set();
   }
   if (!state.selected.size) {
     showToast("先选一个答案");
-    return;
+    return null;
   }
 
   const selectedAnswer = buildSelectedAnswer(question);
   const correct = isAnswerCorrect(question, selectedAnswer);
+  return { correct, selectedAnswer };
+}
+
+async function commitPracticeAnswer(question, result) {
   const previous = getProgress(question.id);
   const next = {
     ...previous,
     id: question.id,
     bankId: question.bankId,
     questionId: question.id,
-    selectedAnswer,
+    selectedAnswer: result.selectedAnswer,
     answered: true,
-    correct,
+    correct: result.correct,
     attempts: previous.attempts + 1,
-    wrongCount: correct ? (previous.wrongCount || 0) : (previous.wrongCount || 0) + 1,
-    mastered: correct ? previous.mastered : false,
+    wrongCount: result.correct ? (previous.wrongCount || 0) : (previous.wrongCount || 0) + 1,
+    mastered: result.correct ? previous.mastered : false,
     lastAnsweredAt: new Date().toISOString(),
   };
   state.progress.set(question.id, next);
-  state.lastResult = { correct, selectedAnswer };
+  state.lastResult = result;
   state.submitted = true;
   await putRecord(STORE_PROGRESS, next);
   await updateBankLastStudied(question.bankId);
   await refreshBanks();
   persistPracticeSession();
-  if (!correct) vibrateWrongFeedback();
-  render();
+  if (!result.correct) vibrateWrongFeedback();
 }
 
 function nextQuestion() {
+  saveExamSelection();
   if (state.queueIndex + 1 >= state.queue.length) {
     clearPracticeSession(state.currentBankId);
     resetPracticeQueue();
@@ -1468,9 +1803,7 @@ function nextQuestion() {
     return;
   }
   state.queueIndex += 1;
-  state.selected = new Set();
-  state.submitted = false;
-  state.lastResult = null;
+  restoreSelectionForCurrentQuestion();
   state.questionPickerOpen = false;
   persistPracticeSession();
   render();
@@ -1481,11 +1814,14 @@ function persistPracticeSession() {
   const payload = {
     bankId: state.currentBankId,
     mode: state.practiceMode,
+    sessionMode: state.sessionMode,
+    answerFeedbackMode: state.answerFeedbackMode,
     queueIds: state.queue.map((question) => question.id),
     queueIndex: state.queueIndex,
     selected: [...state.selected],
     submitted: state.submitted,
     lastResult: state.lastResult,
+    examRunResults: [...state.examRunResults.entries()],
     updatedAt: new Date().toISOString(),
   };
   localStorage.setItem(PRACTICE_SESSION_KEY, JSON.stringify(payload));
@@ -1508,6 +1844,8 @@ function getValidPracticeSession() {
   return {
     ...session,
     mode: session.mode || "sequential",
+    sessionMode: normalizeSessionMode(session.sessionMode || session.answerFeedbackMode),
+    answerFeedbackMode: normalizeAnswerFeedbackMode(session.answerFeedbackMode),
     queueIds,
     queueIndex: Math.min(Math.max(Number(session.queueIndex) || 0, 0), queueIds.length - 1),
     selected: Array.isArray(session.selected) ? session.selected : [],
@@ -1519,6 +1857,200 @@ function clearPracticeSession(bankId = "") {
   if (!bankId || !session || session.bankId === bankId) {
     localStorage.removeItem(PRACTICE_SESSION_KEY);
   }
+}
+
+function saveExamSelection() {
+  if (state.sessionMode !== "exam") return;
+  const question = state.queue[state.queueIndex];
+  if (!question) return;
+  if (question.type === "fill") {
+    const fillValue = cleanText(document.querySelector("#fillAnswer")?.value || "");
+    state.selected = fillValue ? new Set([fillValue]) : new Set();
+  }
+  if (!state.selected.size) {
+    state.examRunResults.delete(question.id);
+    return;
+  }
+  state.examRunResults.set(question.id, { selectedAnswer: buildSelectedAnswer(question), answered: true });
+}
+
+function restoreSelectionForCurrentQuestion() {
+  const question = state.queue[state.queueIndex];
+  const result = question ? state.examRunResults.get(question.id) : null;
+  state.selected = result ? selectedAnswerToSet(question, result.selectedAnswer) : new Set();
+  state.submitted = false;
+  state.lastResult = null;
+}
+
+function selectedAnswerToSet(question, selectedAnswer) {
+  if (!selectedAnswer) return new Set();
+  if (question?.type === "multiple") return new Set(String(selectedAnswer).split(""));
+  return new Set([selectedAnswer]);
+}
+
+async function finishExam() {
+  saveExamSelection();
+  const bank = getCurrentBank();
+  if (!bank) return;
+  const now = new Date().toISOString();
+  const results = state.queue.map((item) => {
+    const saved = state.examRunResults.get(item.id);
+    const selectedAnswer = saved?.selectedAnswer || "";
+    const answered = Boolean(selectedAnswer);
+    return {
+      questionId: item.id,
+      order: item.order,
+      type: item.type,
+      stem: item.stem,
+      selectedAnswer,
+      answered,
+      correct: answered && isAnswerCorrect(item, selectedAnswer),
+    };
+  });
+  const correctCount = results.filter((item) => item.correct).length;
+  const unansweredCount = results.filter((item) => !item.answered).length;
+  const wrongCount = results.filter((item) => item.answered && !item.correct).length;
+  const record = {
+    id: createId("exam"),
+    bankId: state.currentBankId,
+    bankTitle: getBankTitle(bank),
+    total: results.length,
+    correct: correctCount,
+    wrong: wrongCount,
+    unanswered: unansweredCount,
+    accuracy: results.length ? Math.round((correctCount / results.length) * 100) : 0,
+    results,
+    createdAt: now,
+  };
+  await putRecord(STORE_EXAM_SESSIONS, record);
+  state.lastExamRecord = record;
+  state.examReviewIndex = 0;
+  await refreshExamSessions();
+  clearPracticeSession(state.currentBankId);
+  state.queue = [];
+  state.queueIndex = 0;
+  state.selected = new Set();
+  state.submitted = false;
+  state.lastResult = null;
+  showToast("考试已提交");
+  render();
+}
+
+function renderExamSummary(record) {
+  const results = record.results || [];
+  const selectedIndex = getExamReviewIndex(record);
+  const selectedItem = results[selectedIndex] || results[0] || null;
+  return `
+    <section class="panel">
+      <div class="bank-head">
+        <div>
+          <h2>考试结算</h2>
+          <p class="subtle">${escapeHtml(record.bankTitle)} · ${formatDateTime(record.createdAt)}</p>
+        </div>
+        <span class="type-pill ${record.accuracy >= 80 ? "good" : "warn"}">${record.accuracy}%</span>
+      </div>
+      <div class="metric-row">
+        <div class="metric"><strong>${record.total}</strong><span>总题数</span></div>
+        <div class="metric"><strong>${record.correct}</strong><span>正确</span></div>
+        <div class="metric"><strong>${record.wrong}</strong><span>错误</span></div>
+        <div class="metric"><strong>${record.unanswered || 0}</strong><span>未答</span></div>
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button class="button" type="button" data-action="add-exam-wrongs" data-id="${record.id}" ${record.wrong ? "" : "disabled"}>本次错题加入错题本</button>
+        <button class="ghost-button" type="button" data-action="view-stats" data-id="${record.bankId}">查看考试记录</button>
+        <button class="ghost-button" type="button" data-action="start-practice">再考一次</button>
+      </div>
+    </section>
+    <section class="panel exam-review-panel">
+      <div class="bank-head">
+        <div>
+          <h2>答题回顾</h2>
+          <p class="subtle">绿色为正确，红色为错误，白色为未答。点击题号查看题目。</p>
+        </div>
+      </div>
+      <div class="exam-number-grid">
+        ${results.map((item, index) => renderExamReviewButton(item, index, selectedIndex)).join("")}
+      </div>
+      ${selectedItem ? renderExamResultItem(selectedItem, selectedIndex) : renderEmpty("暂无题目", "这次考试没有记录题目。")}
+    </section>
+  `;
+}
+
+function renderExamReviewButton(item, index, selectedIndex) {
+  const answered = isExamResultAnswered(item);
+  const className = [
+    "exam-number-button",
+    index === selectedIndex ? "is-current" : "",
+    !answered ? "is-unanswered" : item.correct ? "is-correct" : "is-wrong",
+  ].filter(Boolean).join(" ");
+  return `
+    <button class="${className}" type="button" data-action="review-exam-question" data-index="${index}" aria-label="查看第 ${item.order || index + 1} 题">
+      ${item.order || index + 1}
+    </button>
+  `;
+}
+
+function renderExamResultItem(item, index = 0) {
+  const answered = isExamResultAnswered(item);
+  return `
+    <article class="list-item exam-review-detail">
+      <div class="chip-row">
+        <span class="type-pill">第 ${item.order || index + 1} 题</span>
+        <span class="type-pill">${typeLabel(item.type)}</span>
+        <span class="type-pill ${!answered ? "" : item.correct ? "good" : "warn"}">${!answered ? "未答" : item.correct ? "正确" : "错误"}</span>
+      </div>
+      <p>${escapeHtml(item.stem)}</p>
+      <p class="subtle">你的答案：${escapeHtml(item.selectedAnswer || "未作答")}</p>
+    </article>
+  `;
+}
+
+function getExamReviewIndex(record) {
+  const total = record.results?.length || 0;
+  if (!total) return 0;
+  return Math.min(Math.max(Number(state.examReviewIndex) || 0, 0), total - 1);
+}
+
+function reviewExamQuestion(index) {
+  const record = state.lastExamRecord;
+  const total = record?.results?.length || 0;
+  if (!Number.isInteger(index) || index < 0 || index >= total) return;
+  state.examReviewIndex = index;
+  render();
+}
+
+function isExamResultAnswered(item) {
+  return item.answered ?? Boolean(item.selectedAnswer);
+}
+
+async function addExamWrongQuestions(recordId) {
+  const record = state.examSessions.find((item) => item.id === recordId) || state.lastExamRecord;
+  if (!record) return;
+  const wrongIds = new Set(record.results.filter((item) => isExamResultAnswered(item) && !item.correct).map((item) => item.questionId));
+  const now = new Date().toISOString();
+  const rows = state.questions
+    .filter((question) => wrongIds.has(question.id))
+    .map((question) => {
+      const current = getProgress(question.id);
+      return {
+        ...current,
+        id: question.id,
+        questionId: question.id,
+        bankId: question.bankId,
+        wrongCount: Math.max(1, current.wrongCount || 0),
+        mastered: false,
+        lastAnsweredAt: current.lastAnsweredAt || now,
+      };
+    });
+  if (!rows.length) {
+    showToast("没有可加入的错题");
+    return;
+  }
+  await putMany(STORE_PROGRESS, rows);
+  rows.forEach((row) => state.progress.set(row.questionId, row));
+  await refreshBanks();
+  showToast(`已加入 ${rows.length} 道错题`);
+  render();
 }
 
 function buildSelectedAnswer(question) {
@@ -1598,6 +2130,32 @@ function setCurrentBank(id, persist) {
   if (persist) localStorage.setItem(CURRENT_BANK_KEY, id);
 }
 
+function setSessionMode(mode) {
+  const nextMode = normalizeSessionMode(mode);
+  if (nextMode === state.sessionMode) return;
+  if (hasActivePractice() && !confirm("切换本次模式会清空当前进行中的答题，确定继续吗？")) {
+    render();
+    return;
+  }
+  state.sessionMode = nextMode;
+  localStorage.setItem(SESSION_MODE_KEY, state.sessionMode);
+  resetPracticeQueue();
+  render();
+}
+
+function setAnswerFeedbackMode(mode) {
+  const nextMode = normalizeAnswerFeedbackMode(mode);
+  if (nextMode === state.answerFeedbackMode) return;
+  if (hasActivePractice() && state.sessionMode === "practice" && !confirm("切换练习反馈会清空当前进行中的答题，确定继续吗？")) {
+    render();
+    return;
+  }
+  state.answerFeedbackMode = nextMode;
+  localStorage.setItem(ANSWER_FEEDBACK_KEY, state.answerFeedbackMode);
+  resetPracticeQueue();
+  render();
+}
+
 function toggleQuestionPicker() {
   if (!state.queue.length) return;
   state.questionPickerOpen = !state.questionPickerOpen;
@@ -1612,10 +2170,9 @@ function closeQuestionPicker() {
 
 function jumpToQuestion(index) {
   if (!Number.isInteger(index) || index < 0 || index >= state.queue.length) return;
+  saveExamSelection();
   state.queueIndex = index;
-  state.selected = new Set();
-  state.submitted = false;
-  state.lastResult = null;
+  restoreSelectionForCurrentQuestion();
   state.questionPickerOpen = false;
   persistPracticeSession();
   render();
@@ -1642,6 +2199,25 @@ async function saveBankEdit(formData) {
   const id = cleanText(formData.get("id"));
   const bank = state.banks.find((item) => item.id === id);
   if (!bank) return;
+  if (bank.cloudId) {
+    const addTags = splitTags(formData.get("addTags"));
+    if (!addTags.length) {
+      showToast("请输入要添加的标签");
+      return;
+    }
+    const tags = [...new Set([...(bank.tags || []), ...addTags].map(cleanText).filter(Boolean))];
+    const updated = {
+      ...bank,
+      tags,
+      updatedAt: new Date().toISOString(),
+    };
+    await putRecord(STORE_BANKS, updated);
+    state.editingBankId = "";
+    await refreshBanks();
+    showToast(`已添加 ${tags.length - (bank.tags || []).length} 个本地标签`);
+    render();
+    return;
+  }
   const course = cleanText(formData.get("course"));
   const chapter = cleanText(formData.get("chapter"));
   const tags = splitTags(formData.get("tags"));
@@ -1679,6 +2255,7 @@ async function deleteBank(id) {
     state.editingBankId = "";
   }
   await refreshBanks();
+  await refreshExamSessions();
   if (!state.currentBankId && state.banks[0]) {
     setCurrentBank(state.banks[0].id, true);
     await loadCurrentBank();
@@ -1688,11 +2265,12 @@ async function deleteBank(id) {
 
 async function exportBackup() {
   const backup = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     banks: await getAll(STORE_BANKS),
     questions: await getAll(STORE_QUESTIONS),
     progress: await getAll(STORE_PROGRESS),
+    examSessions: await getAll(STORE_EXAM_SESSIONS),
   };
   downloadBlob(`我爱刷题备份-${dateStamp()}.json`, new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" }));
   showToast("备份已导出");
@@ -1711,7 +2289,9 @@ async function importBackup(file) {
     await putMany(STORE_BANKS, imported.banks);
     await putMany(STORE_QUESTIONS, imported.questions);
     if (imported.progress.length) await putMany(STORE_PROGRESS, imported.progress);
+    if (imported.examSessions.length) await putMany(STORE_EXAM_SESSIONS, imported.examSessions);
     await refreshBanks();
+    await refreshExamSessions();
     state.currentBankId = imported.banks[0]?.id || state.banks[0]?.id || "";
     if (state.currentBankId) localStorage.setItem(CURRENT_BANK_KEY, state.currentBankId);
     await loadCurrentBank();
@@ -1772,7 +2352,19 @@ function remapBackupForAppend(backup) {
       };
     });
 
-  return { banks, questions, progress };
+  const examSessions = (backup.examSessions || [])
+    .filter((item) => item && item.id && bankIdMap.has(item.bankId))
+    .map((item) => ({
+      ...item,
+      id: createId("exam"),
+      bankId: bankIdMap.get(item.bankId),
+      results: (item.results || []).map((result) => ({
+        ...result,
+        questionId: questionIdMap.get(result.questionId) || result.questionId,
+      })),
+    }));
+
+  return { banks, questions, progress, examSessions };
 }
 
 async function clearAllData() {
@@ -1780,6 +2372,7 @@ async function clearAllData() {
   await clearStores();
   state.banks = [];
   state.allProgress = [];
+  state.examSessions = [];
   state.questions = [];
   state.progress = new Map();
   state.currentBankId = "";
@@ -1925,6 +2518,10 @@ async function refreshBanks() {
   state.allProgress = await getAll(STORE_PROGRESS);
 }
 
+async function refreshExamSessions() {
+  state.examSessions = (await getAll(STORE_EXAM_SESSIONS)).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+}
+
 async function loadCurrentBank() {
   if (!state.currentBankId) return;
   state.questions = (await getByIndex(STORE_QUESTIONS, "bankId", state.currentBankId)).sort((a, b) => a.order - b.order);
@@ -1944,11 +2541,13 @@ async function saveBankWithQuestions(bank, questions) {
 async function deleteBankCascade(bankId) {
   const questions = await getByIndex(STORE_QUESTIONS, "bankId", bankId);
   const progress = await getByIndex(STORE_PROGRESS, "bankId", bankId);
+  const examSessions = await getByIndex(STORE_EXAM_SESSIONS, "bankId", bankId);
   const db = await openDB();
-  await txDone(db, [STORE_BANKS, STORE_QUESTIONS, STORE_PROGRESS], "readwrite", (tx) => {
+  await txDone(db, [STORE_BANKS, STORE_QUESTIONS, STORE_PROGRESS, STORE_EXAM_SESSIONS], "readwrite", (tx) => {
     tx.objectStore(STORE_BANKS).delete(bankId);
     questions.forEach((question) => tx.objectStore(STORE_QUESTIONS).delete(question.id));
     progress.forEach((item) => tx.objectStore(STORE_PROGRESS).delete(item.id));
+    examSessions.forEach((item) => tx.objectStore(STORE_EXAM_SESSIONS).delete(item.id));
   });
 }
 
@@ -1971,6 +2570,10 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains(STORE_PROGRESS)) {
         const store = db.createObjectStore(STORE_PROGRESS, { keyPath: "id" });
+        store.createIndex("bankId", "bankId", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_EXAM_SESSIONS)) {
+        const store = db.createObjectStore(STORE_EXAM_SESSIONS, { keyPath: "id" });
         store.createIndex("bankId", "bankId", { unique: false });
       }
     };
@@ -2005,10 +2608,11 @@ async function putMany(storeName, records) {
 
 async function clearStores() {
   const db = await openDB();
-  await txDone(db, [STORE_BANKS, STORE_QUESTIONS, STORE_PROGRESS], "readwrite", (tx) => {
+  await txDone(db, [STORE_BANKS, STORE_QUESTIONS, STORE_PROGRESS, STORE_EXAM_SESSIONS], "readwrite", (tx) => {
     tx.objectStore(STORE_BANKS).clear();
     tx.objectStore(STORE_QUESTIONS).clear();
     tx.objectStore(STORE_PROGRESS).clear();
+    tx.objectStore(STORE_EXAM_SESSIONS).clear();
   });
 }
 
@@ -2071,6 +2675,23 @@ function getCurrentSummary() {
   return { done, correct, wrong, accuracy: done ? Math.round((correct / done) * 100) : 0 };
 }
 
+function getCurrentExamRecords() {
+  return state.examSessions.filter((item) => item.bankId === state.currentBankId);
+}
+
+function getOwnedPublishedBanks() {
+  return state.banks.filter((bank) => isOwnedPublishedBank(bank));
+}
+
+function isOwnedPublishedBank(bank) {
+  const username = cleanText(state.cloudProfile?.username);
+  return Boolean(bank?.cloudId && username && getBankOwnerUsername(bank) === username);
+}
+
+function getBankOwnerUsername(bank) {
+  return cleanText(bank?.ownerUsername || bank?.sourceOwnerUsername || bank?.owner_username);
+}
+
 function getFilteredBanks() {
   const keyword = state.bankFilter.toLowerCase();
   if (!keyword) return state.banks;
@@ -2118,8 +2739,16 @@ function typeLabel(type) {
   return ({ single: "单选", multiple: "多选", judge: "判断", fill: "填空" })[type] || "题目";
 }
 
-function modeName(mode) {
+function queueModeName(mode) {
   return ({ sequential: "顺序", random: "随机", wrong: "错题", favorite: "收藏", unanswered: "未做" })[mode] || "练习";
+}
+
+function sessionModeName(mode) {
+  return ({ practice: "练习模式", exam: "考试模式" })[mode] || "练习模式";
+}
+
+function answerFeedbackModeName(mode) {
+  return ({ instant: "直接显示答案", submit: "提交后显示答案" })[mode] || "提交后显示答案";
 }
 
 function isJudgementAnswer(answer) {
@@ -2147,6 +2776,43 @@ function splitTags(value) {
 
 function normalizeUsername(value) {
   return cleanText(value).toLowerCase().replace(/[^a-z0-9_]/g, "");
+}
+
+function normalizeSessionMode(value) {
+  if (value === "exam") return "exam";
+  return SESSION_MODES.has(value) ? value : "practice";
+}
+
+function normalizeAnswerFeedbackMode(value) {
+  if (value === "drill") return "instant";
+  if (value === "thinking" || value === "exam") return "submit";
+  return ANSWER_FEEDBACK_MODES.has(value) ? value : "submit";
+}
+
+function normalizeTheme(value) {
+  return THEMES.has(value) ? value : "default";
+}
+
+function applyTheme(theme) {
+  const nextTheme = normalizeTheme(theme);
+  state.appTheme = nextTheme;
+  if (nextTheme === "default") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.dataset.theme = nextTheme;
+  }
+  localStorage.setItem(THEME_KEY, nextTheme);
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function cleanText(value) {
