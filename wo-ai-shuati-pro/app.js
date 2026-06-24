@@ -56,6 +56,10 @@ const state = {
   syncStatus: "",
   editingBankId: "",
   importSheetOpen: false,
+  bankBulkMode: false,
+  publicBankBulkMode: false,
+  selectedBankIds: new Set(),
+  selectedPublicBankIds: new Set(),
   questionPickerOpen: false,
 };
 
@@ -150,6 +154,28 @@ async function handleViewClick(event) {
   }
   if (action === "delete-bank") {
     await deleteBank(id);
+  }
+  if (action === "start-bank-bulk") {
+    state.bankBulkMode = true;
+    render();
+  }
+  if (action === "toggle-bank-selection") {
+    toggleSelection(state.selectedBankIds, id);
+    renderBankList();
+    renderBankBulkBar();
+  }
+  if (action === "select-all-banks") {
+    getFilteredBanks().forEach((bank) => state.selectedBankIds.add(bank.id));
+    renderBankList();
+    renderBankBulkBar();
+  }
+  if (action === "clear-bank-selection") {
+    state.selectedBankIds.clear();
+    state.bankBulkMode = false;
+    render();
+  }
+  if (action === "delete-selected-banks") {
+    await deleteSelectedBanks();
   }
   if (action === "publish-bank") {
     await publishLocalBank(id);
@@ -260,6 +286,26 @@ async function handleViewClick(event) {
   if (action === "use-public-bank") {
     await usePublicBank(id);
   }
+  if (action === "start-public-bank-bulk") {
+    state.publicBankBulkMode = true;
+    render();
+  }
+  if (action === "toggle-public-bank-selection") {
+    toggleSelection(state.selectedPublicBankIds, id);
+    render();
+  }
+  if (action === "select-all-public-banks") {
+    state.publicBanks.forEach((bank) => state.selectedPublicBankIds.add(bank.id));
+    render();
+  }
+  if (action === "clear-public-bank-selection") {
+    state.selectedPublicBankIds.clear();
+    state.publicBankBulkMode = false;
+    render();
+  }
+  if (action === "save-selected-public-banks") {
+    await saveSelectedPublicBanks();
+  }
   if (action === "open-owner") {
     await openOwnerProfile(target.dataset.username);
   }
@@ -296,6 +342,7 @@ function handleViewInput(event) {
   if (event.target.matches("#bankSearch")) {
     state.bankFilter = event.target.value.trim();
     renderBankList();
+    renderBankBulkBar();
   }
   if (event.target.matches("#discoverSearch")) {
     state.discoverQuery = event.target.value.trim();
@@ -334,7 +381,10 @@ function renderBanks() {
             <h2>我的题库</h2>
             <p class="subtle">管理本机题库、公开题库副本和练习记录。</p>
           </div>
-          <button class="button compact-button" type="button" data-action="open-import">导入</button>
+          <div class="actions header-actions">
+            <button class="ghost-button compact-button" type="button" data-action="start-bank-bulk" ${banks.length ? "" : "disabled"}>批量</button>
+            <button class="button compact-button" type="button" data-action="open-import">导入</button>
+          </div>
         </div>
         <section class="metric-row bank-library-metrics">
           <div class="metric"><strong>${state.banks.length}</strong><span>题库</span></div>
@@ -345,6 +395,7 @@ function renderBanks() {
           <label for="bankSearch">搜索题库/标签</label>
           <input id="bankSearch" type="search" value="${escapeAttr(state.bankFilter)}" placeholder="输入课程、章节或标签" />
         </div>
+        <div data-bank-bulk-bar>${renderBankBulkBarContent(banks)}</div>
         <div class="bank-list" data-bank-list>${renderBankListContent(banks)}</div>
       </section>
     </section>
@@ -399,6 +450,27 @@ function renderBankList() {
   list.innerHTML = renderBankListContent(getFilteredBanks());
 }
 
+function renderBankBulkBar() {
+  const bar = view.querySelector("[data-bank-bulk-bar]");
+  if (!bar) return;
+  bar.innerHTML = renderBankBulkBarContent(getFilteredBanks());
+}
+
+function renderBankBulkBarContent(banks) {
+  if (!state.bankBulkMode) return "";
+  const selectedCount = banks.filter((bank) => state.selectedBankIds.has(bank.id)).length;
+  return `
+    <div class="bulk-bar">
+      <span class="subtle">已选择 ${selectedCount}/${banks.length} 个题库</span>
+      <div class="actions bulk-actions">
+        <button class="ghost-button" type="button" data-action="select-all-banks" ${banks.length ? "" : "disabled"}>全选</button>
+        <button class="ghost-button" type="button" data-action="clear-bank-selection">完成</button>
+        <button class="danger-button" type="button" data-action="delete-selected-banks" ${state.selectedBankIds.size ? "" : "disabled"}>批量删除</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderBankListContent(banks) {
   return banks.length
     ? banks.map(renderBankCard).join("")
@@ -418,6 +490,10 @@ function renderBankCard(bank) {
       <div class="bank-head bank-card-head">
         <div class="bank-title-wrap">
           <h3 class="bank-title">
+            ${state.bankBulkMode ? `<label class="select-check" title="选择题库">
+              <input type="checkbox" data-action="toggle-bank-selection" data-id="${bank.id}" ${state.selectedBankIds.has(bank.id) ? "checked" : ""} />
+              <span></span>
+            </label>` : ""}
             <span class="bank-course">${escapeHtml(course)}</span>
             ${chapter ? `<span class="bank-chapter">${escapeHtml(chapter)}</span>` : ""}
           </h3>
@@ -535,10 +611,33 @@ function renderDiscover() {
       </div>
     </section>
     ${state.discoverProfile ? renderProfilePreview(state.discoverProfile) : ""}
+    ${!state.discoverLoading && state.publicBanks.length ? renderPublicBankBulkControls() : ""}
     <section class="bank-list">
       ${state.discoverLoading ? renderEmpty("正在搜索", "稍等一下。") : ""}
       ${!state.discoverLoading && state.publicBanks.length ? state.publicBanks.map(renderPublicBankCard).join("") : ""}
       ${!state.discoverLoading && !state.publicBanks.length ? renderEmpty("暂无结果", state.cloudConfigured ? "输入用户名或题库 ID 后搜索。" : "先在 config.js 配置 Supabase。") : ""}
+    </section>
+  `;
+}
+
+function renderPublicBankBulkControls() {
+  if (!state.publicBankBulkMode) {
+    return `
+      <section class="panel bulk-bar">
+        <span class="subtle">共 ${state.publicBanks.length} 个公开题库</span>
+        <button class="ghost-button compact-button" type="button" data-action="start-public-bank-bulk">批量</button>
+      </section>
+    `;
+  }
+  const selectedCount = state.publicBanks.filter((bank) => state.selectedPublicBankIds.has(bank.id)).length;
+  return `
+    <section class="panel bulk-bar">
+      <span class="subtle">已选择 ${selectedCount}/${state.publicBanks.length} 个公开题库</span>
+      <div class="actions bulk-actions">
+        <button class="ghost-button" type="button" data-action="select-all-public-banks">全选</button>
+        <button class="ghost-button" type="button" data-action="clear-public-bank-selection">完成</button>
+        <button class="button" type="button" data-action="save-selected-public-banks" ${state.selectedPublicBankIds.size ? "" : "disabled"}>批量添加</button>
+      </div>
     </section>
   `;
 }
@@ -567,7 +666,13 @@ function renderPublicBankCard(bank) {
           <h3 class="bank-title">${escapeHtml(getBankTitle(bank))}</h3>
           <p class="bank-meta">${bank.question_count || 0} 题 · 作者 @${escapeHtml(bank.owner_username || "unknown")} · ID ${escapeHtml(bank.id)}</p>
         </div>
-        <span class="type-pill good">公开</span>
+        <div class="bank-head-actions">
+          ${state.publicBankBulkMode ? `<label class="select-check" title="选择公开题库">
+            <input type="checkbox" data-action="toggle-public-bank-selection" data-id="${bank.id}" ${state.selectedPublicBankIds.has(bank.id) ? "checked" : ""} />
+            <span></span>
+          </label>` : ""}
+          <span class="type-pill good">公开</span>
+        </div>
       </div>
       ${tags.length ? `<div class="tag-row">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
       <div class="actions">
@@ -1379,6 +1484,8 @@ async function searchPublicBanks() {
   }
   state.discoverLoading = true;
   state.publicBanks = [];
+  state.selectedPublicBankIds.clear();
+  state.publicBankBulkMode = false;
   state.discoverProfile = null;
   render();
   try {
@@ -1414,37 +1521,76 @@ async function openOwnerProfile(username) {
 async function usePublicBank(bankId) {
   try {
     showToast("正在保存公开题库...");
-    const payload = await cloud.getPublicBank(bankId);
-    if (!payload) throw new Error("找不到公开题库");
-    const existing = findSavedPublicBank(state.banks, payload.bank.id);
-    if (existing) {
-      setCurrentBank(existing.id, true);
+    const saved = await savePublicBankToLocal(bankId);
+    if (saved.skipped) {
+      setCurrentBank(saved.localBankId, true);
       showToast("这个公开题库已经保存过，可在题库页打开本地副本");
       render();
       return;
     }
-    const localBankId = createId("bank");
-    const now = new Date().toISOString();
-    const { localBank, localQuestions } = mapPublicBankToLocal({
-      payload,
-      localBankId,
-      now,
-      createQuestionId: () => createId("q"),
-      buildBankName,
-      countQuestionTypes,
-    });
-    await saveBankWithQuestions(localBank, localQuestions);
-    if (state.cloudUser) {
-      await cloud.savePublicBank(payload.bank.id, localBankId);
-    }
-    setCurrentBank(localBankId, true);
+    setCurrentBank(saved.localBankId, true);
     await refreshBanks();
     resetPracticeQueue();
-    showToast(`已保存 ${localQuestions.length} 道题，可在题库页开始练习`);
+    state.selectedPublicBankIds.delete(bankId);
+    showToast(`已保存 ${saved.questionCount} 道题，可在题库页开始练习`);
     render();
   } catch (error) {
     console.error(error);
     showToast(`保存失败：${error.message || error}`);
+  }
+}
+
+async function savePublicBankToLocal(bankId) {
+  const payload = await cloud.getPublicBank(bankId);
+  if (!payload) throw new Error("找不到公开题库");
+  const existing = findSavedPublicBank(state.banks, payload.bank.id);
+  if (existing) {
+    return { skipped: true, localBankId: existing.id, questionCount: existing.questionCount || existing.total || 0 };
+  }
+  const localBankId = createId("bank");
+  const now = new Date().toISOString();
+  const { localBank, localQuestions } = mapPublicBankToLocal({
+    payload,
+    localBankId,
+    now,
+    createQuestionId: () => createId("q"),
+    buildBankName,
+    countQuestionTypes,
+  });
+  await saveBankWithQuestions(localBank, localQuestions);
+  if (state.cloudUser) {
+    await cloud.savePublicBank(payload.bank.id, localBankId);
+  }
+  return { skipped: false, localBankId, questionCount: localQuestions.length };
+}
+
+async function saveSelectedPublicBanks() {
+  const ids = [...state.selectedPublicBankIds].filter((id) => state.publicBanks.some((bank) => bank.id === id));
+  if (!ids.length) {
+    showToast("请先选择公开题库");
+    return;
+  }
+  try {
+    showToast(`正在添加 ${ids.length} 个公开题库...`);
+    let savedCount = 0;
+    let skippedCount = 0;
+    let lastLocalBankId = "";
+    for (const id of ids) {
+      const result = await savePublicBankToLocal(id);
+      if (result.skipped) skippedCount += 1;
+      else savedCount += 1;
+      lastLocalBankId = result.localBankId || lastLocalBankId;
+    }
+    state.selectedPublicBankIds.clear();
+    state.publicBankBulkMode = false;
+    await refreshBanks();
+    if (lastLocalBankId) setCurrentBank(lastLocalBankId, true);
+    resetPracticeQueue();
+    render();
+    showToast(`批量添加完成：新增 ${savedCount} 个，已存在 ${skippedCount} 个`);
+  } catch (error) {
+    console.error(error);
+    showToast(`批量添加失败：${error.message || error}`);
   }
 }
 
@@ -2263,6 +2409,41 @@ async function deleteBank(id) {
   render();
 }
 
+async function deleteSelectedBanks() {
+  const ids = [...state.selectedBankIds].filter((id) => state.banks.some((bank) => bank.id === id));
+  if (!ids.length) {
+    showToast("请先选择题库");
+    return;
+  }
+  if (!confirm(`确定删除选中的 ${ids.length} 个题库吗？相关题目、练习记录和考试记录也会删除。`)) return;
+  for (const id of ids) {
+    await deleteBankCascade(id);
+    clearPracticeSession(id);
+  }
+  state.selectedBankIds.clear();
+  state.bankBulkMode = false;
+  if (ids.includes(state.currentBankId)) {
+    state.currentBankId = "";
+    localStorage.removeItem(CURRENT_BANK_KEY);
+    state.questions = [];
+    state.progress = new Map();
+    resetPracticeQueue();
+  }
+  if (ids.includes(state.editingBankId)) {
+    state.editingBankId = "";
+  }
+  await refreshBanks();
+  await refreshExamSessions();
+  if (!state.currentBankId && state.banks[0]) {
+    setCurrentBank(state.banks[0].id, true);
+    await loadCurrentBank();
+  } else if (state.currentBankId) {
+    await loadCurrentBank();
+  }
+  showToast(`已删除 ${ids.length} 个题库`);
+  render();
+}
+
 async function exportBackup() {
   const backup = {
     version: 2,
@@ -2686,6 +2867,12 @@ function getOwnedPublishedBanks() {
 function isOwnedPublishedBank(bank) {
   const username = cleanText(state.cloudProfile?.username);
   return Boolean(bank?.cloudId && username && getBankOwnerUsername(bank) === username);
+}
+
+function toggleSelection(set, id) {
+  if (!id) return;
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
 }
 
 function getBankOwnerUsername(bank) {
