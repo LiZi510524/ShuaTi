@@ -121,7 +121,7 @@ export function mapCloudBankToLocal({
   const localBank = {
     id: localBankId,
     cloudId: payload.bank.id,
-    sourceOwnerUsername: payload.bank.owner_username,
+    ownerUsername: payload.bank.owner_username,
     name: buildBankName(localCourse, localChapter, payload.bank.name),
     course: localCourse,
     chapter: localChapter,
