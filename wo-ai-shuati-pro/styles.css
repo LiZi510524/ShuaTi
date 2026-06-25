@@ -421,6 +421,42 @@ h3 {
   padding: 8px 10px;
 }
 
+.app-version-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.app-version-card strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.app-version-card .subtle {
+  margin: 2px 0 0;
+}
+
+.version-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.small-button {
+  min-height: 32px;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
 .authors-footer {
   display: flex;
   align-items: center;

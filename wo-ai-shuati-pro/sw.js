@@ -1,4 +1,4 @@
-const CACHE_NAME = "wo-ai-shuati-pro-v22";
+const CACHE_NAME = "wo-ai-shuati-pro-v23";
 const CORE_ASSETS = [
   "./",
   "./index.html",
@@ -27,7 +27,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
-  if (url.pathname.endsWith("/config.js")) {
+  if (event.request.cache === "no-store" || url.pathname.endsWith("/config.js") || url.pathname.endsWith("/version.json")) {
     event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
