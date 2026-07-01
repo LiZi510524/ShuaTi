@@ -24,11 +24,11 @@ export const cloud = {
     const refreshToken = hash.get("refresh_token");
     const expiresIn = Number(hash.get("expires_in") || 3600);
     if (!accessToken) return false;
-    saveSession({
+    saveSession(normalizeAuthSession({
       access_token: accessToken,
       refresh_token: refreshToken,
-      expires_at: Date.now() + expiresIn * 1000,
-    });
+      expires_in: expiresIn,
+    }, refreshToken));
     history.replaceState(null, "", location.pathname + location.search);
     return true;
   },
@@ -49,7 +49,7 @@ export const cloud = {
   },
   async getUser() {
     assertConfigured(this.config);
-    const session = requireSession();
+    const session = await getValidSession(this.config);
     const result = await authFetch(this.config, "/user", {
       method: "GET",
       token: session.access_token,
@@ -72,9 +72,10 @@ export const cloud = {
   },
   async upsertProfile(profile) {
     const user = requireUser(profile);
+    const session = await getValidSession(this.config);
     const rows = await restFetch(this.config, "/profiles?on_conflict=id", {
       method: "POST",
-      token: this.session.access_token,
+      token: session.access_token,
       prefer: "resolution=merge-duplicates,return=representation",
       body: [{
         id: user.id,
@@ -104,11 +105,12 @@ export const cloud = {
   async publishBank(bank, questions, profile, visibility = "public") {
     assertConfigured(this.config);
     const user = requireUser(profile);
+    const session = await getValidSession(this.config);
     const now = new Date().toISOString();
     const cloudId = bank.cloudId || bank.id;
     await restFetch(this.config, "/question_banks?on_conflict=id", {
       method: "POST",
-      token: this.session.access_token,
+      token: session.access_token,
       prefer: "resolution=merge-duplicates,return=representation",
       body: [{
         id: cloudId,
@@ -127,7 +129,7 @@ export const cloud = {
 
     await restFetch(this.config, `/questions?bank_id=eq.${encodeURIComponent(cloudId)}`, {
       method: "DELETE",
-      token: this.session.access_token,
+      token: session.access_token,
     });
 
     const rows = questions.map((question) => ({
@@ -143,7 +145,7 @@ export const cloud = {
       updated_at: now,
     }));
 
-    await insertChunks(this.config, "/questions", rows, this.session.access_token);
+    await insertChunks(this.config, "/questions", rows, session.access_token);
     return cloudId;
   },
   async searchPublicBanks(query = "") {
@@ -184,8 +186,8 @@ export const cloud = {
   },
   async listMyCloudBanks() {
     assertConfigured(this.config);
-    const session = requireSession();
     const user = await this.getUser();
+    const session = await getValidSession(this.config);
     return restFetch(this.config, `/question_banks?owner_id=eq.${encodeURIComponent(user.id)}&select=*&order=updated_at.desc`, {
       method: "GET",
       token: session.access_token,
@@ -193,7 +195,7 @@ export const cloud = {
   },
   async listMySavedBankRelations() {
     assertConfigured(this.config);
-    const session = requireSession();
+    const session = await getValidSession(this.config);
     return restFetch(this.config, "/user_bank_saves?select=*&order=updated_at.desc", {
       method: "GET",
       token: session.access_token,
@@ -201,7 +203,7 @@ export const cloud = {
   },
   async getBank(bankId) {
     assertConfigured(this.config);
-    const session = requireSession();
+    const session = await getValidSession(this.config);
     const banks = await restFetch(this.config, `/question_banks?id=eq.${encodeURIComponent(bankId)}&select=*`, {
       method: "GET",
       token: session.access_token,
@@ -216,8 +218,8 @@ export const cloud = {
   },
   async savePublicBank(bankId, localBankId) {
     assertConfigured(this.config);
-    const session = requireSession();
     const user = await this.getUser();
+    const session = await getValidSession(this.config);
     const now = new Date().toISOString();
     await restFetch(this.config, "/user_bank_saves?on_conflict=id", {
       method: "POST",
@@ -235,7 +237,7 @@ export const cloud = {
   },
   async getProgress(bankId) {
     assertConfigured(this.config);
-    const session = requireSession();
+    const session = await getValidSession(this.config);
     return restFetch(this.config, `/question_progress?bank_id=eq.${encodeURIComponent(bankId)}&select=*`, {
       method: "GET",
       token: session.access_token,
@@ -244,8 +246,8 @@ export const cloud = {
   async pushProgress(progressRows) {
     if (!progressRows.length) return;
     assertConfigured(this.config);
-    const session = requireSession();
     const user = await this.getUser();
+    const session = await getValidSession(this.config);
     const rows = progressRows.map((item) => ({
       id: `${user.id}_${item.questionId}`,
       user_id: user.id,
@@ -312,6 +314,37 @@ function requireSession() {
   const session = loadSession();
   if (!session?.access_token) throw new Error("请先登录");
   return session;
+}
+
+async function getValidSession(config) {
+  const session = requireSession();
+  if (!isSessionExpiring(session)) return session;
+  if (!session.refresh_token) return session;
+  const refreshed = await refreshSession(config, session.refresh_token);
+  saveSession(refreshed);
+  return refreshed;
+}
+
+function isSessionExpiring(session) {
+  if (!session.expires_at) return false;
+  return Number(session.expires_at) <= Date.now() + 60_000;
+}
+
+async function refreshSession(config, refreshToken) {
+  const session = await authFetch(config, "/token?grant_type=refresh_token", {
+    method: "POST",
+    body: { refresh_token: refreshToken },
+  });
+  return normalizeAuthSession(session, refreshToken);
+}
+
+function normalizeAuthSession(session, fallbackRefreshToken = "") {
+  const expiresIn = Number(session.expires_in || 3600);
+  return {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token || fallbackRefreshToken || "",
+    expires_at: session.expires_at ? Number(session.expires_at) * 1000 : Date.now() + expiresIn * 1000,
+  };
 }
 
 function requireUser(profile) {

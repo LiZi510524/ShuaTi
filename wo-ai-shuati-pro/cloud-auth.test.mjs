@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildOAuthSignInUrl } from "./cloud.js";
+import { buildOAuthSignInUrl, cloud } from "./cloud.js";
 
 test("builds a Supabase GitHub OAuth authorize URL with the configured production redirect", () => {
   const url = buildOAuthSignInUrl({
@@ -63,4 +63,61 @@ test("rejects unsupported OAuth providers", () => {
     }, "password"),
     /不支持的登录方式/,
   );
+});
+
+test("refreshes an expired stored session before fetching the current user", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalLocalStorage = globalThis.localStorage;
+  const calls = [];
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.has(key) ? storage.get(key) : null,
+    setItem: (key, value) => storage.set(key, String(value)),
+    removeItem: (key) => storage.delete(key),
+  };
+  cloud.config = {
+    supabaseUrl: "https://example.supabase.co",
+    supabaseAnonKey: "anon",
+    appUrl: "https://site.example/app/",
+  };
+  localStorage.setItem("wo-ai-shuati-pro-session", JSON.stringify({
+    access_token: "stale-token",
+    refresh_token: "refresh-token",
+    expires_at: Date.now() - 1000,
+  }));
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options });
+    if (String(url).endsWith("/auth/v1/token?grant_type=refresh_token")) {
+      assert.equal(JSON.parse(options.body).refresh_token, "refresh-token");
+      return new Response(JSON.stringify({
+        access_token: "fresh-token",
+        refresh_token: "fresh-refresh-token",
+        expires_in: 3600,
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    if (String(url).endsWith("/auth/v1/user")) {
+      assert.equal(options.headers.Authorization, "Bearer fresh-token");
+      return new Response(JSON.stringify({ id: "user-1", email: "u@example.com" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  try {
+    const user = await cloud.getUser();
+    assert.equal(user.id, "user-1");
+    assert.deepEqual(calls.map((call) => call.url), [
+      "https://example.supabase.co/auth/v1/token?grant_type=refresh_token",
+      "https://example.supabase.co/auth/v1/user",
+    ]);
+    const saved = JSON.parse(localStorage.getItem("wo-ai-shuati-pro-session"));
+    assert.equal(saved.access_token, "fresh-token");
+    assert.equal(saved.refresh_token, "fresh-refresh-token");
+    assert.ok(saved.expires_at > Date.now());
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.localStorage = originalLocalStorage;
+  }
 });
